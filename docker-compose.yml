@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # Communication Hub UI - Your Control Center
+  hub-ui:
+    build: 
+      context: ./hub-ui
+      dockerfile: Dockerfile
+    ports: 
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - API_BASE_URL=http://comm-processor:5000
+    volumes:
+      - ./config:/app/config
+      - ./backups:/app/backups
+    depends_on:
+      - comm-processor
+      - postgres
+      - redis
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # Unified Communication Processor
+  comm-processor:
+    build:
+      context: ./comm-processor
+      dockerfile: Dockerfile
+    environment:
+      - TWILIO_SID=${TWILIO_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
+      - LINDY_API_KEY=${LINDY_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - GMAIL_CREDENTIALS=${GMAIL_CREDENTIALS}
+      - MISSIVE_TOKEN=${MISSIVE_TOKEN}
+      - BEEPER_WEBHOOK_URL=${BEEPER_WEBHOOK_URL}
+      - FACEBOOK_ACCESS_TOKEN=${FACEBOOK_ACCESS_TOKEN}
+      - INSTAGRAM_ACCESS_TOKEN=${INSTAGRAM_ACCESS_TOKEN}
+      - LINKEDIN_ACCESS_TOKEN=${LINKEDIN_ACCESS_TOKEN}
+      - DATABASE_URL=postgresql://admin:${DB_PASSWORD}@postgres:5432/premium_gastro
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # N8n Workflow Engine (Self-contained)
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=admin
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - WEBHOOK_URL=https://your-domain.com/
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-workflows:/workflows
+    depends_on:
+      - postgres
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # Database (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=premium_gastro
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_MULTIPLE_DATABASES=n8n
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # Redis Cache (Fast access)
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # Backup Service
+  backup-service:
+    build:
+      context: ./backup-service
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://admin:${DB_PASSWORD}@postgres:5432/premium_gastro
+      - BACKUP_SCHEDULE=0 */6 * * *  # Every 6 hours
+      - CLOUD_STORAGE_URL=${CLOUD_STORAGE_URL}
+    volumes:
+      - ./backups:/app/backups
+      - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # Health Monitor
+  health-monitor:
+    build:
+      context: ./health-monitor
+      dockerfile: Dockerfile
+    environment:
+      - SERVICES_TO_MONITOR=hub-ui,comm-processor,n8n,postgres,redis
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL}
+      - CHECK_INTERVAL=30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./logs:/app/logs
+    restart: always
+    networks:
+      - premium-gastro-network
+
+volumes:
+  n8n_data:
+  postgres_data:
+  redis_data:
+
+networks:
+  premium-gastro-network:
+    driver: bridge
