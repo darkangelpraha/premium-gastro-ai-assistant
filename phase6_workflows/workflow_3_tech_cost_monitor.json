@@ -1,0 +1,278 @@
+{
+  "name": "[PHASE 6 SYNC] Monthly Tech Stack Cost Alert [INACTIVE]",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "month",
+              "monthsInterval": 1
+            }
+          ]
+        },
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyDay",
+              "hour": 9,
+              "minute": 0,
+              "dayOfMonth": 1
+            }
+          ]
+        }
+      },
+      "name": "First of Month - 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "id": "schedule-monthly"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://api.notion.com/v1/databases/279d8b84-5bc9-812d-a312-f4baa0233171/query",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filter: {\n    property: 'Status',\n    select: {\n      equals: 'Active'\n    }\n  },\n  page_size: 100\n}) }}",
+        "options": {}
+      },
+      "name": "Query Active Tools",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "query-tech-stack",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7NCoGhP8bZQs2fDW",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate total monthly costs\nconst results = $json.results || [];\n\nlet totalMonthlyCost = 0;\nconst tools = [];\n\nfor (const page of results) {\n  const toolName = page.properties?.Name?.title?.[0]?.plain_text || 'Unknown';\n  const monthlyCost = page.properties?.['Monthly Cost']?.number || 0;\n  \n  if (monthlyCost > 0) {\n    tools.push({\n      name: toolName,\n      cost: monthlyCost\n    });\n    totalMonthlyCost += monthlyCost;\n  }\n}\n\n// Sort tools by cost (highest first)\ntools.sort((a, b) => b.cost - a.cost);\n\nconst totalAnnual = totalMonthlyCost * 12;\nconst threshold = 500; // Alert if over $500/month\nconst shouldAlert = totalMonthlyCost > threshold;\n\nconsole.log(`[PHASE 6] Tech Stack Costs - Monthly: $${totalMonthlyCost.toFixed(2)}, Annual: $${totalAnnual.toFixed(2)}`);\n\nreturn [{\n  json: {\n    total_monthly: totalMonthlyCost,\n    total_annual: totalAnnual,\n    tool_count: tools.length,\n    threshold: threshold,\n    should_alert: shouldAlert,\n    top_10_tools: tools.slice(0, 10),\n    all_tools: tools,\n    workflow: 'phase6_tech_cost_monitor',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Calculate Costs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "calculate-costs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "id": "cost-threshold",
+              "leftValue": "={{ $json.should_alert }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Over Threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        300
+      ],
+      "id": "check-threshold"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare alert task for Asana\nconst data = $json;\nconst monthName = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });\n\n// Format top tools list\nconst topToolsList = data.top_10_tools\n  .map((tool, i) => `${i + 1}. ${tool.name}: $${tool.cost.toFixed(2)}/month`)\n  .join('\\n');\n\nconst taskName = `\ud83d\udcb0 Tech Stack Cost Review - ${monthName}`;\nconst taskNotes = `\ud83d\udea8 Monthly tech stack costs have exceeded threshold!\\n\\n` +\n  `\ud83d\udcca Summary:\\n` +\n  `- Total Monthly: $${data.total_monthly.toFixed(2)}\\n` +\n  `- Total Annual: $${data.total_annual.toFixed(2)}\\n` +\n  `- Active Tools: ${data.tool_count}\\n` +\n  `- Threshold: $${data.threshold}/month\\n\\n` +\n  `\ud83d\udcb8 Top 10 Highest Costs:\\n${topToolsList}\\n\\n` +\n  `\ud83d\udccb Action Items:\\n` +\n  `\u2705 Review all active tools\\n` +\n  `\u2705 Identify unused or underutilized services\\n` +\n  `\u2705 Look for consolidation opportunities\\n` +\n  `\u2705 Update Notion Tech Stack with any changes\\n\\n` +\n  `[PHASE 6 SYNC] Auto-created monthly cost alert`;\n\nreturn [{\n  json: {\n    task_name: taskName,\n    task_notes: taskNotes,\n    project_gid: '1211547448108353',\n    total_monthly: data.total_monthly,\n    total_annual: data.total_annual,\n    workflow: 'phase6_tech_cost_monitor'\n  }\n}];"
+      },
+      "name": "Prepare Alert Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        180
+      ],
+      "id": "prepare-alert"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://app.asana.com/api/1.0/tasks",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  data: {\n    name: $json.task_name,\n    notes: $json.task_notes,\n    projects: [$json.project_gid]\n  }\n}) }}",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "name": "Create Alert Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        180
+      ],
+      "id": "create-cost-alert",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GiA0KsfjNENLryC0",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log alert created\nconst inputData = $input.first().json;\nconst taskData = $json.data || {};\n\nconsole.log(`\u2705 [PHASE 6] Created cost alert task: Monthly $${inputData.total_monthly.toFixed(2)}, Annual $${inputData.total_annual.toFixed(2)}`);\n\nreturn [{\n  json: {\n    success: true,\n    action: 'cost_alert_created',\n    asana_task_gid: taskData.gid,\n    total_monthly: inputData.total_monthly,\n    total_annual: inputData.total_annual,\n    workflow: 'phase6_tech_cost_monitor',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Log Alert Created",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        180
+      ],
+      "id": "log-alert-created"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Under threshold - just log\nconst data = $json;\n\nconsole.log(`\u2705 [PHASE 6] Tech costs under threshold: $${data.total_monthly.toFixed(2)}/month (threshold: $${data.threshold})`);\n\nreturn [{\n  json: {\n    success: true,\n    message: 'Costs under threshold - no alert needed',\n    total_monthly: data.total_monthly,\n    total_annual: data.total_annual,\n    workflow: 'phase6_tech_cost_monitor',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Under Threshold",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        420
+      ],
+      "id": "under-threshold"
+    }
+  ],
+  "connections": {
+    "First of Month - 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Query Active Tools",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Active Tools": {
+      "main": [
+        [
+          {
+            "node": "Calculate Costs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Costs": {
+      "main": [
+        [
+          {
+            "node": "Over Threshold?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Over Threshold?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Alert Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Under Threshold",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Alert Task": {
+      "main": [
+        [
+          {
+            "node": "Create Alert Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Alert Task": {
+      "main": [
+        [
+          {
+            "node": "Log Alert Created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "phase6",
+      "name": "phase6"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "tech-monitoring",
+      "name": "tech-monitoring"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "INACTIVE",
+      "name": "INACTIVE"
+    }
+  ]
+}

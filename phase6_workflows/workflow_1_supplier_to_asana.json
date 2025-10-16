@@ -1,0 +1,270 @@
+{
+  "name": "[PHASE 6 SYNC] Notion Supplier \u2192 Asana Task [INACTIVE]",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "name": "Poll Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "id": "schedule-trigger-suppliers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize staticData if needed\nif (!$workflow.staticData) {\n  $workflow.staticData = {};\n}\n\n// Get last check timestamp with safe access\nconst lastCheck = $workflow.staticData.last_check || new Date(Date.now() - 6*60*60*1000).toISOString();\n\n// Store current timestamp for next run\n$workflow.staticData.last_check = new Date().toISOString();\n\nconsole.log(`[PHASE 6] Checking Notion Suppliers since: ${lastCheck}`);\n\nreturn [{\n  json: {\n    last_check: lastCheck,\n    current_time: new Date().toISOString(),\n    database_id: '275d8b84-5bc9-81bc-b0da-f338bd1e64b0',\n    workflow: 'phase6_supplier_to_asana'\n  }\n}];"
+      },
+      "name": "Get Last Check Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "get-last-check-time"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://api.notion.com/v1/databases/275d8b84-5bc9-81bc-b0da-f338bd1e64b0/query",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filter: {\n    and: [\n      {\n        property: 'Onboarding Stage',\n        select: {\n          equals: 'In Progress'\n        }\n      },\n      {\n        timestamp: 'last_edited_time',\n        last_edited_time: {\n          after: $json.last_check\n        }\n      }\n    ]\n  },\n  page_size: 10\n}) }}",
+        "options": {}
+      },
+      "name": "Query Notion Suppliers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "query-notion-suppliers",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7NCoGhP8bZQs2fDW",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "check-has-results",
+              "leftValue": "={{ $json.results?.length || 0 }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Any New Suppliers?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        300
+      ],
+      "id": "check-new-suppliers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Notion results and prepare Asana task data\nconst results = $json.results || [];\n\nconsole.log(`[PHASE 6] Found ${results.length} suppliers needing Asana tasks`);\n\nconst tasks = [];\n\nfor (const page of results) {\n  const supplierName = page.properties?.Supplier?.title?.[0]?.plain_text || 'Unknown Supplier';\n  const notionPageId = page.id;\n  const notionUrl = `https://notion.so/${notionPageId.replace(/-/g, '')}`;\n  \n  console.log(`[PHASE 6] Preparing task for supplier: ${supplierName}`);\n  \n  tasks.push({\n    supplier_name: supplierName,\n    notion_page_id: notionPageId,\n    notion_url: notionUrl,\n    task_name: `Complete onboarding for ${supplierName}`,\n    task_notes: `\ud83d\udd17 Notion page: ${notionUrl}\\n\\n\ud83d\udccb Onboarding Checklist:\\n\\n\u2705 Send onboarding form\\n\u2705 Review product catalog\\n\u2705 Negotiate terms\\n\u2705 Add to ERP system\\n\\n[PHASE 6 SYNC] Auto-created from Notion`,\n    asana_project_gid: '1207809086806827',\n    created_from_notion: true,\n    sync_timestamp: new Date().toISOString()\n  });\n}\n\nreturn tasks.map(task => ({ json: task }));"
+      },
+      "name": "Prepare Asana Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        180
+      ],
+      "id": "prepare-asana-tasks"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://app.asana.com/api/1.0/tasks",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  data: {\n    name: $json.task_name,\n    notes: $json.task_notes,\n    projects: [$json.asana_project_gid]\n  }\n}) }}",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "name": "Create Asana Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        180
+      ],
+      "id": "create-asana-task",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GiA0KsfjNENLryC0",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log successful creation\nconst taskData = $json.data || {};\nconst taskGid = taskData.gid;\nconst inputData = $input.first().json;\nconst taskName = inputData.task_name;\nconst supplierName = inputData.supplier_name;\n\nconsole.log(`\u2705 [PHASE 6] Created Asana task ${taskGid} for supplier: ${supplierName}`);\n\nreturn [{\n  json: {\n    success: true,\n    asana_task_gid: taskGid,\n    asana_task_url: `https://app.asana.com/0/1207809086806827/${taskGid}`,\n    supplier_name: supplierName,\n    task_name: taskName,\n    notion_page_id: inputData.notion_page_id,\n    workflow: 'phase6_supplier_to_asana',\n    action: 'task_created',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        180
+      ],
+      "id": "log-success-supplier"
+    },
+    {
+      "parameters": {
+        "jsCode": "// No new suppliers - log and exit\nconsole.log('[PHASE 6] No new suppliers with In Progress onboarding');\n\nreturn [{\n  json: {\n    success: true,\n    message: 'No new suppliers to process',\n    workflow: 'phase6_supplier_to_asana',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "No New Suppliers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        420
+      ],
+      "id": "no-new-suppliers"
+    }
+  ],
+  "connections": {
+    "Poll Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Last Check Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Last Check Time": {
+      "main": [
+        [
+          {
+            "node": "Query Notion Suppliers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Notion Suppliers": {
+      "main": [
+        [
+          {
+            "node": "Any New Suppliers?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any New Suppliers?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Asana Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Suppliers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Asana Tasks": {
+      "main": [
+        [
+          {
+            "node": "Create Asana Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Asana Task": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "phase6",
+      "name": "phase6"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "notion-asana-sync",
+      "name": "notion-asana-sync"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "INACTIVE",
+      "name": "INACTIVE"
+    }
+  ]
+}

@@ -1,0 +1,268 @@
+{
+  "name": "[PHASE 6 SYNC] Tech Tool Evaluation Task [INACTIVE]",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "name": "Poll Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "id": "schedule-tech-eval"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize staticData if needed\nif (!$workflow.staticData) {\n  $workflow.staticData = {};\n}\n\n// Get last check timestamp with safe access\nconst lastCheck = $workflow.staticData.last_check_tech || new Date(Date.now() - 24*60*60*1000).toISOString();\n\n$workflow.staticData.last_check_tech = new Date().toISOString();\n\nconsole.log(`[PHASE 6] Checking Tech Stack for evaluation tools since: ${lastCheck}`);\n\nreturn [{\n  json: {\n    last_check: lastCheck,\n    current_time: new Date().toISOString(),\n    database_id: '279d8b84-5bc9-812d-a312-f4baa0233171',\n    workflow: 'phase6_tech_evaluation'\n  }\n}];"
+      },
+      "name": "Get Last Check Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "get-last-check-tech"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://api.notion.com/v1/databases/279d8b84-5bc9-812d-a312-f4baa0233171/query",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filter: {\n    and: [\n      {\n        property: 'Status',\n        select: {\n          equals: 'Under Evaluation'\n        }\n      },\n      {\n        timestamp: 'last_edited_time',\n        last_edited_time: {\n          after: $json.last_check\n        }\n      }\n    ]\n  },\n  page_size: 10\n}) }}",
+        "options": {}
+      },
+      "name": "Query Tools Under Evaluation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "query-tech-tools",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7NCoGhP8bZQs2fDW",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "id": "has-tools",
+              "leftValue": "={{ $json.results?.length || 0 }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Any Tools to Evaluate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        300
+      ],
+      "id": "check-eval-tools"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse tools and prepare evaluation tasks\nconst results = $json.results || [];\n\nconsole.log(`[PHASE 6] Found ${results.length} tools needing evaluation`);\n\nconst tasks = [];\n\nfor (const page of results) {\n  const toolName = page.properties?.Name?.title?.[0]?.plain_text || 'Unknown Tool';\n  const category = page.properties?.Category?.select?.name || 'Uncategorized';\n  const notionPageId = page.id;\n  const notionUrl = `https://notion.so/${notionPageId.replace(/-/g, '')}`;\n  \n  console.log(`[PHASE 6] Preparing evaluation task for: ${toolName}`);\n  \n  const taskName = `\ud83d\udd0d Evaluate ${toolName} for ${category}`;\n  const taskNotes = `\ud83d\udd17 Notion record: ${notionUrl}\\n\\n` +\n    `\ud83d\udccb Evaluation Checklist:\\n\\n` +\n    `\u2705 Test core features and capabilities\\n` +\n    `\u2705 Check pricing tiers and total cost\\n` +\n    `\u2705 Review security and compliance\\n` +\n    `\u2705 Compare with alternative tools\\n` +\n    `\u2705 Test integration with existing stack\\n` +\n    `\u2705 Make recommendation (Active/Rejected)\\n` +\n    `\u2705 Update Notion Tech Stack with decision\\n\\n` +\n    `\ud83c\udfaf Category: ${category}\\n` +\n    `\ud83d\udcca Update Notion with:\\n` +\n    `- Final Status (Active/Rejected)\\n` +\n    `- Monthly/Annual Cost (if approved)\\n` +\n    `- Last Used date\\n\\n` +\n    `[PHASE 6 SYNC] Auto-created evaluation task`;\n  \n  tasks.push({\n    tool_name: toolName,\n    category: category,\n    notion_page_id: notionPageId,\n    notion_url: notionUrl,\n    task_name: taskName,\n    task_notes: taskNotes,\n    project_gid: '1211547448108353',\n    workflow: 'phase6_tech_evaluation'\n  });\n}\n\nreturn tasks.map(task => ({ json: task }));"
+      },
+      "name": "Prepare Evaluation Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        180
+      ],
+      "id": "prepare-eval-tasks"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://app.asana.com/api/1.0/tasks",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  data: {\n    name: $json.task_name,\n    notes: $json.task_notes,\n    projects: [$json.project_gid]\n  }\n}) }}",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "name": "Create Evaluation Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        180
+      ],
+      "id": "create-eval-task",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GiA0KsfjNENLryC0",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log successful creation\nconst inputData = $input.first().json;\nconst taskData = $json.data || {};\n\nconsole.log(`\u2705 [PHASE 6] Created evaluation task ${taskData.gid} for tool: ${inputData.tool_name}`);\n\nreturn [{\n  json: {\n    success: true,\n    asana_task_gid: taskData.gid,\n    tool_name: inputData.tool_name,\n    category: inputData.category,\n    notion_page_id: inputData.notion_page_id,\n    action: 'evaluation_task_created',\n    workflow: 'phase6_tech_evaluation',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        180
+      ],
+      "id": "log-eval-success"
+    },
+    {
+      "parameters": {
+        "jsCode": "// No tools to evaluate\nconsole.log('[PHASE 6] No tools requiring evaluation');\n\nreturn [{\n  json: {\n    success: true,\n    message: 'No tools under evaluation',\n    workflow: 'phase6_tech_evaluation',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "No Tools to Evaluate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        420
+      ],
+      "id": "no-eval-tools"
+    }
+  ],
+  "connections": {
+    "Poll Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Last Check Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Last Check Time": {
+      "main": [
+        [
+          {
+            "node": "Query Tools Under Evaluation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Tools Under Evaluation": {
+      "main": [
+        [
+          {
+            "node": "Any Tools to Evaluate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Tools to Evaluate?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Evaluation Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Tools to Evaluate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Evaluation Tasks": {
+      "main": [
+        [
+          {
+            "node": "Create Evaluation Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Evaluation Task": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "phase6",
+      "name": "phase6"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "tech-evaluation",
+      "name": "tech-evaluation"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "INACTIVE",
+      "name": "INACTIVE"
+    }
+  ]
+}
