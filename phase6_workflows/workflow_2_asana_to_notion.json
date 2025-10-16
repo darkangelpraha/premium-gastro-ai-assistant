@@ -1,0 +1,276 @@
+{
+  "name": "[PHASE 6 SYNC] Asana Complete \u2192 Notion Update [INACTIVE]",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "name": "Poll Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "id": "schedule-trigger-asana"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize staticData if needed\nif (!$workflow.staticData) {\n  $workflow.staticData = {};\n}\n\n// Get last check timestamp with safe access\nconst lastCheck = $workflow.staticData.last_check_asana || new Date(Date.now() - 6*60*60*1000).toISOString();\n\n$workflow.staticData.last_check_asana = new Date().toISOString();\n\nconsole.log(`[PHASE 6] Checking Asana completions since: ${lastCheck}`);\n\nreturn [{\n  json: {\n    last_check: lastCheck,\n    current_time: new Date().toISOString(),\n    project_gid: '1207809086806827',\n    workflow: 'phase6_asana_to_notion'\n  }\n}];"
+      },
+      "name": "Get Last Check Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "id": "get-last-check-asana"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "={{ 'https://app.asana.com/api/1.0/projects/' + $json.project_gid + '/tasks?completed_since=' + encodeURIComponent($json.last_check) + '&opt_fields=name,completed,completed_at,notes' }}",
+        "method": "GET",
+        "options": {}
+      },
+      "name": "Query Completed Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "id": "query-asana-tasks",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "GiA0KsfjNENLryC0",
+          "name": "Asana API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter for onboarding tasks\nconst allTasks = $json.data || [];\n\nconst onboardingTasks = allTasks.filter(task => \n  task.completed && \n  task.name && \n  task.name.includes('Complete onboarding for')\n);\n\nconsole.log(`[PHASE 6] Found ${onboardingTasks.length} completed onboarding tasks`);\n\nif (onboardingTasks.length === 0) {\n  return [];\n}\n\nconst results = onboardingTasks.map(task => {\n  // Extract supplier name from task title\n  const match = task.name.match(/Complete onboarding for (.+)/);\n  const supplierName = match ? match[1] : null;\n  \n  return {\n    asana_task_gid: task.gid,\n    asana_task_name: task.name,\n    supplier_name: supplierName,\n    completed_at: task.completed_at,\n    workflow: 'phase6_asana_to_notion'\n  };\n}).filter(item => item.supplier_name);\n\nconsole.log(`[PHASE 6] Processing ${results.length} tasks with valid supplier names`);\n\nreturn results.map(r => ({ json: r }));"
+      },
+      "name": "Filter Onboarding Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "id": "filter-onboarding"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://api.notion.com/v1/databases/275d8b84-5bc9-81bc-b0da-f338bd1e64b0/query",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filter: {\n    property: 'Supplier',\n    title: {\n      equals: $json.supplier_name\n    }\n  },\n  page_size: 1\n}) }}",
+        "options": {}
+      },
+      "name": "Find Supplier in Notion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        300
+      ],
+      "id": "find-notion-supplier",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7NCoGhP8bZQs2fDW",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if supplier was found\nconst results = $json.results || [];\nconst inputData = $input.first().json;\n\nif (results.length === 0) {\n  console.log(`\u26a0\ufe0f [PHASE 6] Supplier not found in Notion: ${inputData.supplier_name}`);\n  return [];\n}\n\nconst supplierPage = results[0];\nconst pageId = supplierPage.id;\n\nconsole.log(`[PHASE 6] Found supplier in Notion: ${inputData.supplier_name} (${pageId})`);\n\nreturn [{\n  json: {\n    notion_page_id: pageId,\n    supplier_name: inputData.supplier_name,\n    asana_task_gid: inputData.asana_task_gid,\n    completed_at: inputData.completed_at,\n    workflow: 'phase6_asana_to_notion'\n  }\n}];"
+      },
+      "name": "Check If Found",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ],
+      "id": "check-found"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "={{ 'https://api.notion.com/v1/pages/' + $json.notion_page_id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  properties: {\n    'Onboarding Stage': {\n      select: {\n        name: 'Completed'\n      }\n    }\n  }\n}) }}",
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 1000
+          }
+        }
+      },
+      "name": "Update Notion Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        300
+      ],
+      "id": "update-notion-status",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7NCoGhP8bZQs2fDW",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log successful update\nconst inputData = $input.first().json;\n\nconsole.log(`\u2705 [PHASE 6] Updated Notion supplier: ${inputData.supplier_name} \u2192 Onboarding Stage: Completed`);\n\nreturn [{\n  json: {\n    success: true,\n    supplier_name: inputData.supplier_name,\n    notion_page_id: inputData.notion_page_id,\n    asana_task_gid: inputData.asana_task_gid,\n    action: 'notion_updated',\n    new_status: 'Completed',\n    workflow: 'phase6_asana_to_notion',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        300
+      ],
+      "id": "log-success-notion"
+    }
+  ],
+  "connections": {
+    "Poll Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Last Check Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Last Check Time": {
+      "main": [
+        [
+          {
+            "node": "Query Completed Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Completed Tasks": {
+      "main": [
+        [
+          {
+            "node": "Filter Onboarding Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Onboarding Tasks": {
+      "main": [
+        [
+          {
+            "node": "Find Supplier in Notion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Supplier in Notion": {
+      "main": [
+        [
+          {
+            "node": "Check If Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Found": {
+      "main": [
+        [
+          {
+            "node": "Update Notion Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Notion Status": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "phase6",
+      "name": "phase6"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "notion-asana-sync",
+      "name": "notion-asana-sync"
+    },
+    {
+      "createdAt": "2025-10-16T01:00:00.000Z",
+      "updatedAt": "2025-10-16T01:00:00.000Z",
+      "id": "INACTIVE",
+      "name": "INACTIVE"
+    }
+  ]
+}
