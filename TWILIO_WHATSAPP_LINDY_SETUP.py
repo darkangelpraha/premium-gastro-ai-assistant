@@ -75,7 +75,15 @@ class TwilioWhatsAppLindySetup:
                 # Get WhatsApp sandbox info
                 sandbox_info = self.get_whatsapp_sandbox_info()
                 if sandbox_info:
-                    print(f"   📱 WhatsApp Sandbox: {sandbox_info}")
+                    # Redact phone number if present before displaying
+                    redacted_sandbox_info = dict(sandbox_info)  # shallow copy
+                    if 'number' in redacted_sandbox_info and redacted_sandbox_info['number']:
+                        num = redacted_sandbox_info['number']
+                        if isinstance(num, str) and len(num) >= 4:
+                            redacted_sandbox_info['number'] = num[:-4] + "****"
+                        else:
+                            redacted_sandbox_info['number'] = "[REDACTED]"
+                    print(f"   📱 WhatsApp Sandbox: {redacted_sandbox_info}")
                 
                 self.setup_log.append("✅ Twilio connection verified")
                 return True
