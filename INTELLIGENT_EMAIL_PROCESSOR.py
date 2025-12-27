@@ -5,11 +5,9 @@ Combines Supabase VIP analysis + SaneBox filtering + Lindy AI processing + Missi
 """
 
 import json
-import requests
-import re
 import os
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 import logging
 from dataclasses import dataclass
 
@@ -24,6 +22,7 @@ class EmailProcessingResult:
     urgency_detected: bool
     suggested_response: str
     processing_confidence: float
+
 
 class IntelligentEmailProcessor:
     """Complete email intelligence system using all Premium Gastro data"""
