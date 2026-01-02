@@ -22,8 +22,6 @@ def test_redact_short_number():
     assert r['number'] == '[REDACTED]'
 
 
-# Optionally test non-dict input passthrough
-
 def test_passthrough_non_dict():
     inp = '+123456'
     assert redact_sandbox_info(inp) == inp

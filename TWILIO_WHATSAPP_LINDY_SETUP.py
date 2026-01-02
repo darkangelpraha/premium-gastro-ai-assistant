@@ -67,7 +67,7 @@ class TwilioWhatsAppLindySetup:
             if not value:
                 try:
                     value = input(f"Enter {description}: ").strip()
-                except Exception:
+                except (EOFError, KeyboardInterrupt):
                     value = ""
             credentials[key] = value
 
