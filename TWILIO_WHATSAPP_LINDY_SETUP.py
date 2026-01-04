@@ -11,6 +11,26 @@ from datetime import datetime
 import logging
 from typing import Dict, Any
 
+def redact_sandbox_info(sandbox_info: Any) -> Any:
+    """Return a shallow-copied sandbox_info with any phone number redacted.
+
+    If sandbox_info is a dict and contains a 'number' key, redact the last
+    4 characters (e.g. +1234567890 -> +123456****). If the number is shorter
+    than 4 chars or not a string, replace with "[REDACTED]".
+    Returns the original value unchanged for non-dict inputs.
+    """
+    if not isinstance(sandbox_info, dict):
+        return sandbox_info
+    redacted = dict(sandbox_info)  # shallow copy
+    if 'number' in redacted and redacted['number']:
+        num = redacted['number']
+        if isinstance(num, str) and len(num) >= 4:
+            redacted['number'] = num[:-4] + '****'
+        else:
+            redacted['number'] = '[REDACTED]'
+    return redacted
+
+
 class TwilioWhatsAppLindySetup:
     """Complete setup for Twilio WhatsApp Business integration with Lindy AI"""
     
@@ -75,7 +95,9 @@ class TwilioWhatsAppLindySetup:
                 # Get WhatsApp sandbox info
                 sandbox_info = self.get_whatsapp_sandbox_info()
                 if sandbox_info:
-                    print(f"   📱 WhatsApp Sandbox: {sandbox_info}")
+                    # Use redaction helper to mask sensitive phone numbers
+                    redacted_info = redact_sandbox_info(sandbox_info)
+                    print(f"   📱 WhatsApp Sandbox: {redacted_info}")
                 
                 self.setup_log.append("✅ Twilio connection verified")
                 return True
