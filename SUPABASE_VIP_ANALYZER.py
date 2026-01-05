@@ -38,11 +38,21 @@ class SupabaseVIPAnalyzer:
     
     def __init__(self):
         # Supabase credentials - load from environment variables
-        self.supabase_url = os.getenv('SUPABASE_URL', 'https://your-project.supabase.co')
+        self.supabase_url = os.getenv('SUPABASE_URL', '')
         self.supabase_key = os.getenv('SUPABASE_KEY', '')
         
+        # Validate required environment variables
+        if not self.supabase_url or self.supabase_url == 'https://your-project.supabase.co':
+            raise ValueError(
+                "SUPABASE_URL environment variable is required. "
+                "Please set it in your .env file or environment."
+            )
+        
         if not self.supabase_key:
-            raise ValueError("SUPABASE_KEY environment variable is required")
+            raise ValueError(
+                "SUPABASE_KEY environment variable is required. "
+                "Please set it in your .env file or environment."
+            )
         
         self.headers = {
             'apikey': self.supabase_key,
