@@ -42,15 +42,15 @@ class SupabaseVIPAnalyzer:
         self.supabase_key = os.getenv('SUPABASE_KEY', '')
         
         # Validate required environment variables
-        if not self.supabase_url or self.supabase_url == 'https://your-project.supabase.co':
+        if not self.supabase_url or 'your-project' in self.supabase_url or 'your_supabase' in self.supabase_url:
             raise ValueError(
-                "SUPABASE_URL environment variable is required. "
+                "SUPABASE_URL environment variable is required and must be a valid URL. "
                 "Please set it in your .env file or environment."
             )
         
-        if not self.supabase_key:
+        if not self.supabase_key or 'your_supabase' in self.supabase_key or len(self.supabase_key) < 20:
             raise ValueError(
-                "SUPABASE_KEY environment variable is required. "
+                "SUPABASE_KEY environment variable is required and must be a valid API key. "
                 "Please set it in your .env file or environment."
             )
         
