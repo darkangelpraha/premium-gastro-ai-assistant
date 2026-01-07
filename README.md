@@ -9,6 +9,7 @@ Complete AI-powered automation system that transforms Premium Gastro into a tech
 ## ✅ Current Status: Phase 1 DEPLOYED
 
 ### 📧 Email Intelligence System (LIVE)
+
 - **VIP Contact Identification**: 3,598 contacts auto-identified from Supabase business data
 - **Multi-language Urgency Detection**: Czech/English/German with 49 keywords
 - **Intelligent Priority Scoring**: 1-10 scale based on business context
@@ -18,32 +19,38 @@ Complete AI-powered automation system that transforms Premium Gastro into a tech
 ## 🚀 Complete Roadmap (6 Phases)
 
 ### Phase 1: Email Intelligence ✅ COMPLETE
+
 - Automated VIP detection from business data
 - Multi-language urgency analysis
 - SaneBox + Lindy integration
 - Missive AI assistant integration
 
 ### Phase 2: Conversation Intelligence 🔄 NEXT
+
 - **Phone Call Transcription**: Whisper API integration
 - **Meeting Intelligence**: Otter.ai automatic summaries
 - **Real-time Insights**: Sentiment analysis and action extraction
 
 ### Phase 3: Document Intelligence 📋 PLANNED
+
 - **Handwritten Notes OCR**: Google Vision + Tesseract
 - **Note Classification**: AI categorization and action extraction
 - **Mobile Integration**: iPhone camera → searchable text
 
 ### Phase 4: Social Media Automation 📱 PLANNED
+
 - **Multi-Platform Management**: Ayrshare API (12+ platforms)
 - **Content Generation**: AI-powered posts and scheduling
 - **Engagement Monitoring**: Automated responses and analytics
 
 ### Phase 5: Advanced Communications 💬 PLANNED
+
 - **Enhanced Missive Integration**: Webhooks and AI panels
 - **Beeper AI Enhancement**: Smart message prioritization
 - **Unified Communication Hub**: Cross-platform conversation sync
 
 ### Phase 6: Multi-Agent AI System 🧠 PLANNED
+
 - **Autonomous Business Agents**: Client relations, supplier management
 - **Self-Improving System**: Learn from business patterns
 - **Complete Automation**: Email → fulfillment workflows
@@ -51,25 +58,39 @@ Complete AI-powered automation system that transforms Premium Gastro into a tech
 ## 🛠️ Technology Stack
 
 ### Core Platform
+
 - **Database**: Supabase (40,803+ business records)
 - **Automation**: N8n (recommended for complex workflows)
 - **AI Processing**: OpenAI GPT models + Whisper
-- **Email**: Missive + SaneBox + Lindy integration
+- **Email**: Missive-first orchestration (personal inbox plus `info@`, `accounting@`, `marketing@`)
 
 ### APIs & Integrations
+
 - **Transcription**: OpenAI Whisper, Otter.ai, Plivo ASR
 - **OCR**: Google Cloud Vision API + Tesseract
 - **Social Media**: Ayrshare unified API
 - **Communications**: Missive webhooks, Beeper integration
+- **Telephony & Voice**: Twilio (SMS/WhatsApp/voice) + Cal.com + ElevenLabs (11.ai) for branded calls
+
+### Integration Rationale (What & Why)
+
+- **Missive hub** – Petr handles all mail, so Missive remains the central cockpit. Shared mailboxes feed into the personal inbox while future rules/SLA tags can be layered once workflows are defined.
+- **N8n orchestrator** – Bridges Czech systems without official APIs (BlueJet, Shoptet Premium, Pohoda, banking feeds) and coordinates handoffs between email, voice, and data stores.
+- **Supabase intelligence** – Stores VIP/contact metadata that the email processor uses to rank responses; also becomes the analytics backbone for later phases.
+- **Twilio escalation** – Account exists (verification pending) and credentials live in 1Password (`Twilio`). Once activated, Missive/n8n can trigger SMS, WhatsApp, or voice alerts for VIP or urgent cases.
+- **Cal.com + 11.ai voice** – Already connected: when a thread needs a call, the system can send a Cal.com link that plays the Premium Gastro voice, giving customers a consistent experience.
+- **Gmail/Gemini watchlist** – Documented for future comparison; once Google exposes reliable backend hooks we can decide whether to augment or replace pieces of the Missive stack.
 
 ## 📊 ROI & Impact
 
 ### Time Savings
+
 - **Current**: 75% reduction in email processing time
 - **Target**: 90% automation across all communications
 - **Value**: 4+ hours saved daily = €4,400 monthly value
 
 ### Cost Efficiency
+
 - **Email Processing**: $600 → $150/month (75% reduction)
 - **Complete System**: ~$417/month total
 - **ROI**: 1,008% monthly return on investment
@@ -92,6 +113,7 @@ Complete AI-powered automation system that transforms Premium Gastro into a tech
 ## 🚦 Quick Start
 
 ### Email System (Already Deployed)
+
 ```bash
 # Test VIP analysis
 python3 SUPABASE_VIP_ANALYZER.py
@@ -101,6 +123,7 @@ python3 INTELLIGENT_EMAIL_PROCESSOR.py
 ```
 
 ### Next Phase: Conversation Intelligence
+
 1. **Whisper API Setup**: Phone call transcription
 2. **Otter.ai Integration**: Meeting intelligence
 3. **Supabase Sync**: Conversation storage and analysis
