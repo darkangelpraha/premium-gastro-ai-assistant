@@ -37,9 +37,22 @@ class SupabaseVIPAnalyzer:
     """Automated VIP contact and urgency pattern detection from Supabase data"""
     
     def __init__(self):
-        # Supabase credentials
-        self.supabase_url = "https://lowgijppjapmetedkvjb.supabase.co"
-        self.supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxvd2dpanBwamFwbWV0ZWRrdmpiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0Nzc2NzM1OSwiZXhwIjoyMDYzMzQzMzU5fQ.xI02de0HUEDZaNsl8KpVWmkcxpTDaM7e5cPMkgaoVgQ"
+        # Supabase credentials - load from environment variables
+        self.supabase_url = os.getenv('SUPABASE_URL', '')
+        self.supabase_key = os.getenv('SUPABASE_KEY', '')
+        
+        # Validate required environment variables
+        if not self.supabase_url or 'your-project' in self.supabase_url or 'your_supabase' in self.supabase_url:
+            raise ValueError(
+                "SUPABASE_URL environment variable is required and must be a valid URL. "
+                "Please set it in your .env file or environment."
+            )
+        
+        if not self.supabase_key or 'your_supabase' in self.supabase_key or len(self.supabase_key) < 20:
+            raise ValueError(
+                "SUPABASE_KEY environment variable is required and must be a valid API key. "
+                "Please set it in your .env file or environment."
+            )
         
         self.headers = {
             'apikey': self.supabase_key,
