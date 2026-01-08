@@ -7,25 +7,60 @@ description: Expert guide for navigating and mastering the Bluejet app for Premi
 
 You are an expert on the Bluejet application as used by Premium Gastro. You provide step-by-step guidance, troubleshooting, and workflow optimization for all Bluejet tasks.
 
-## 🔌 API Integration Status
+## 🔌 API Integration - DOCUMENTED
 
-**REST API**: ✅ Available at `https://czeco.bluejet.cz/api/v1`
-**Authentication**: Token-based (TokenID + TokenHash)
+**REST API**: ✅ `https://czeco.bluejet.cz/api/v1`
+**Authentication**: Token-based (24-hour tokens from TokenID + TokenHash)
+**Documentation**: https://public.bluejet.cz/public/api/bluejet-api.html
 **Scripts Ready**: `bluejet_connect.py`, `bluejet_api_client.py`
-**Status**: Ready to explore API - see `BLUEJET_STATUS.md` for details
 
-**Next**: Once API connection is established, this skill will be updated with actual Bluejet data structures and workflows.
+### API Capabilities
+
+**Available Operations:**
+- **Search/Read**: GET `/api/v1/data` - Query any object type with advanced filtering
+- **Create**: POST `/api/v1/data` - Insert up to 10 objects per request
+- **Update**: PUT `/api/v1/data` - Modify existing records
+- **Upsert**: POST `/api/v1/data/insertorupdate` - Smart insert or update
+- **Delete**: DELETE `/api/v1/data?no={no}&id={id}` - Remove records
+
+**Key Features:**
+- Supports 70+ evidence types (contacts, companies, products, invoices, orders, etc.)
+- Advanced filtering with operators: `=`, `!=`, `contains`, `starts`, `<`, `>`, `<=`, `>=`
+- Pagination with `offset`, `limit`, and `X-Total-Count` header
+- Cross-referencing between objects using `$1$`, `$2$` syntax
+- Supports nested object creation in single request
 
 ## About Bluejet
 
 **Purpose**: Bluejet is an all-in-one CRM/ERP/Inventory/Invoicing system for Premium Gastro
 **Platform URL**: https://czeco.bluejet.cz
 **Language**: Czech interface
-**Core Functions**:
-- 📊 **CRM**: Customer database, contacts, communication tracking
-- 📦 **Inventory**: Stock management, product catalog, warehousing
-- 🧾 **Invoicing**: Invoice creation, quotes, payment tracking
-- 💼 **ERP**: Order management, supplier relations, purchasing, operations
+**Developer**: COMPEKON (Přerov, Czech Republic) - in continuous development since 2008
+
+### Core Data Objects (Evidence Types)
+
+**CRM - Customer Relations:**
+- **222** - Contacts (Kontakty)
+- **225** - Companies (Firmy)
+- **227** - Activities (Aktivity)
+- **276-277** - Contracts (Smlouvy)
+
+**Sales & Orders:**
+- **230, 293** - Offers/Quotes (Nabídky)
+- **321, 356** - Orders (Objednávky)
+- **217** - Products (Produkty)
+
+**Invoicing & Finance:**
+- **323** - Issued Invoices (Faktury vydané)
+- **324** - Received Invoices (Faktury přijaté)
+- **328** - Proforma Invoices (Zálohové faktury)
+- **329** - Credit Notes (Dobropisy)
+
+**Project Management:**
+- **332** - Projects (Projekty)
+- **383** - Plans (Plány)
+
+**70+ additional object types** available for warehouse, logistics, HR, documents, etc.
 
 **Your Use Cases**: Daily business operations - managing customers, inventory, orders, and invoices
 **Frequency**: Daily use for core business operations
