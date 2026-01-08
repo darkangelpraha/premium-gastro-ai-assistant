@@ -1,579 +1,271 @@
-# GitHub Copilot Custom Instructions - Premium Gastro AI Assistant
+# Copilot Instructions for Premium Gastro AI Assistant
 
-## 🎯 Project Overview
+## Repository Overview
 
-**Premium Gastro AI Assistant** is a comprehensive AI-powered automation ecosystem designed to transform business operations through intelligent communication processing, VIP contact management, and multi-channel automation. This is a production system handling real business data for a Central European food service company.
+**Premium Gastro AI Assistant** is a comprehensive AI-powered business automation system for Premium Gastro, a food service business. The repository contains Python scripts, documentation, and configuration for a multi-phase automation ecosystem that handles email intelligence, communication processing, document OCR, social media automation, and workflow orchestration.
 
-## 🏗️ Architecture & Technology Stack
+**Repository Size:** Small (~30 files in root, 6 Python scripts, 17+ markdown documents)
+**Primary Language:** Python 3.12.3
+**Key Technologies:** Supabase, N8n, Docker, Missive API, Twilio, OpenAI
+**Target Runtime:** Python 3.12+ with standard libraries (requests module)
 
-### Core Technologies
-- **Language**: Python 3.x (primary)
-- **Database**: Supabase (PostgreSQL) - 40,803+ business records
-- **Workflow Automation**: N8n, Lindy AI
-- **Containerization**: Docker, docker-compose
-- **AI/ML**: OpenAI APIs (GPT, Whisper), Google Gemini, local Ollama models
+## Project Structure
 
-### Key Integrations
-- **Email**: Missive API (primary hub), Gmail API
-- **Communication**: Twilio (SMS/WhatsApp/Voice), Beeper (unified messaging)
-- **Social Media**: Ayrshare API (multi-platform management)
-- **Voice**: ElevenLabs, Whisper ASR, Plivo
-- **OCR**: Google Cloud Vision API, Tesseract
-- **Scheduling**: Cal.com
-- **Business Data**: Supabase (VIP contacts, conversation history)
+### Root Directory Files
+- **Python Scripts (6):** Core automation scripts for email processing, VIP analysis, Twilio/WhatsApp setup, Missive integration, and mobile app prototype
+- **Documentation (17+ MD files):** Phase completion reports, masterplan, security policy, setup guides
+- **Configuration:** `docker-compose.yml`, `env.example`, `.gitignore`
+- **Subdirectories:**
+  - `tests/` - Pytest unit tests
+  - `phase6_workflows/` - N8n workflow JSON files and import instructions
+  - `mcp-gateway/` - MCP Gateway API setup documentation
 
-### Multi-Tier Architecture
-1. **Tier 1 - Mobile**: iPhone/Android apps for voice commands, OCR, quick actions
-2. **Tier 2 - Workstation**: Heavy computing, advanced AI processing, business intelligence
-3. **Tier 3 - Cloud**: N8n workflows, Supabase sync, API orchestration
+### Key Python Scripts
+1. **SUPABASE_VIP_ANALYZER.py** - Analyzes 40,803+ Supabase records to identify VIP contacts and urgency patterns
+2. **INTELLIGENT_EMAIL_PROCESSOR.py** - Email classification, priority scoring, automated response generation
+3. **MISSIVE_AI_ASSISTANT.py** - Context-aware email intelligence via Missive API
+4. **TWILIO_WHATSAPP_LINDY_SETUP.py** - WhatsApp Business automation setup; includes `redact_sandbox_info()` function
+5. **MOBILE_APP_PROTOTYPE.py** - Mobile app integration prototype
+6. **env.example** - Complete environment variable template with security notes
 
-## 📋 Code Style & Conventions
+### Critical Configuration Files
+- **docker-compose.yml** - Multi-service stack: hub-ui, comm-processor, n8n, postgres, redis, backup-service, health-monitor
+- **env.example** - Requires 20+ environment variables (Supabase, Twilio, APIs, etc.)
+- **.gitignore** - Excludes .env, credentials.json, __pycache__, venv/, build artifacts
 
-### Python Code Standards
+## Build, Test, and Run Instructions
 
-1. **File Headers**: Every Python file starts with a descriptive docstring
-   ```python
-   #!/usr/bin/env python3
-   """
-   MODULE_NAME - BRIEF DESCRIPTION
-   Detailed explanation of what this module does
-   """
+### Prerequisites
+- **Python:** 3.12.3 (verified working version)
+- **pip:** Available in system
+- **Docker:** Version 28.0.4 (use `docker compose`, NOT `docker-compose`)
+- **pytest:** Required for testing (install if missing)
+
+### Environment Setup
+
+**CRITICAL:** All scripts require environment variables. Scripts will fail with helpful error messages if variables are not set.
+
+1. **Create .env file from template:**
+   ```bash
+   cp env.example .env
+   # Edit .env and fill in actual API keys and credentials
    ```
 
-2. **Type Hints**: Use comprehensive type hints from `typing` module
-   ```python
-   from typing import Dict, List, Optional, Any, Tuple
-   
-   def process_email(email: Dict[str, Any]) -> EmailProcessingResult:
-       pass
-   ```
+2. **Required environment variables for Python scripts:**
+   - `SUPABASE_URL` - Must be valid URL (scripts validate this)
+   - `SUPABASE_KEY` - Must be valid API key (minimum 20 characters)
+   - `MISSIVE_API_TOKEN`, `MISSIVE_ORG_ID` - For Missive integration
+   - `TWILIO_SID`, `TWILIO_AUTH_TOKEN` - For Twilio integration
+   - See `env.example` for complete list
 
-3. **Dataclasses**: Prefer dataclasses for structured data
-   ```python
-   from dataclasses import dataclass
-   
-   @dataclass
-   class VIPContact:
-       email: str
-       name: str
-       vip_score: float
-       reasons: List[str]
-   ```
+### Testing
 
-4. **Logging**: Use Python's logging module, configure early
-   ```python
-   import logging
-   
-   logging.basicConfig(level=logging.INFO)
-   self.logger = logging.getLogger(__name__)
-   ```
+**ALWAYS run tests before making changes to understand baseline behavior.**
 
-5. **Environment Variables**: Always use `os.getenv()` for configuration
-   ```python
-   import os
-   
-   # Good - with validation
-   self.supabase_url = os.getenv('SUPABASE_URL', '')
-   if not self.supabase_url or 'your-project' in self.supabase_url:
-       raise ValueError("SUPABASE_URL environment variable is required")
-   
-   # Bad - never hardcode
-   # self.api_key = "sk-abc123..."  # NEVER DO THIS
-   ```
+```bash
+# Install pytest if not present
+pip install pytest
 
-6. **API Headers**: Consistent format for API authentication
-   ```python
-   self.headers = {
-       'apikey': self.api_key,
-       'Authorization': f'Bearer {self.api_key}',
-       'Content-Type': 'application/json'
-   }
-   ```
+# Run all tests (currently 3 tests in test_twilio_redaction.py)
+python3 -m pytest tests/ -v
 
-7. **Class Structure**: Initialize logging first, then config, then load data
-   ```python
-   def __init__(self):
-       # Initialize logging first
-       logging.basicConfig(level=logging.INFO)
-       self.logger = logging.getLogger(__name__)
-       
-       # Load configuration
-       self.config = self.load_config()
-       
-       # Load data
-       self.load_vip_analysis()
-   ```
-
-### Documentation Standards
-
-1. **Markdown Headers**: Use emojis for visual hierarchy
-   ```markdown
-   # 🚀 Main Title
-   ## 🎯 Section
-   ### 📋 Subsection
-   ```
-
-2. **Documentation Style**: Comprehensive, business-focused
-   - Clear section separators with `---`
-   - Code blocks with language specification
-   - ROI and impact metrics
-   - Implementation timelines
-   - Cost analysis
-
-3. **Comments**: Only when necessary for complex business logic
-   - Explain WHY, not WHAT
-   - Document urgency patterns, scoring algorithms, thresholds
-   - Multi-language keyword lists (Czech/English/German)
-
-## 🔒 Security & Privacy Requirements
-
-### Critical Security Rules
-
-1. **Never Hardcode Credentials**: All secrets in environment variables
-2. **Environment File Pattern**: Always use `.env` (gitignored) and `env.example` (committed)
-3. **Validation**: Validate environment variables on startup with descriptive errors
-4. **API Keys**: Load from environment, never commit to repository
-5. **PII Handling**: Customer data is VIP-sensitive (names, emails, business info)
-6. **Redaction**: Implement redaction for phone numbers and sensitive data in logs/tests
-   ```python
-   def redact_sandbox_info(data):
-       if isinstance(data, dict) and 'number' in data:
-           num = str(data['number'])
-           if len(num) > 4:
-               data['number'] = num[:-4] + '****'
-           else:
-               data['number'] = '[REDACTED]'
-       return data
-   ```
-
-### Required Environment Variables
-
-Core variables that must be documented in `env.example`:
-- `SUPABASE_URL` - Supabase project URL
-- `SUPABASE_KEY` - Supabase API key (anon or service role)
-- `MISSIVE_API_TOKEN` - Missive authentication
-- `MISSIVE_ORG_ID` - Missive organization
-- `TWILIO_SID`, `TWILIO_AUTH_TOKEN` - Twilio credentials
-- `OPENAI_API_KEY` - OpenAI services
-- `GEMINI_API_KEY` - Google AI
-- API keys for all integrated services
-
-## 🧪 Testing Standards
-
-### Test Structure
-- **Framework**: pytest (preferred)
-- **Location**: `/tests/` directory
-- **Naming**: `test_*.py` files, `test_*` functions
-- **Docstrings**: Clear description of what is being tested
-
-### Test Patterns
-```python
-"""Tests for the sandbox info redaction helper.
-
-These are simple unit tests intended to run under pytest. They verify that
-phone numbers are masked and short/invalid numbers are replaced with
-"[REDACTED]".
-"""
-
-from MODULE import function_to_test
-
-def test_descriptive_name():
-    # Arrange
-    input_data = {'number': '+1234567890', 'foo': 'bar'}
-    
-    # Act
-    result = function_to_test(input_data)
-    
-    # Assert
-    assert 'number' in result
-    assert result['number'].endswith('****')
+# Run specific test file
+python3 -m pytest tests/test_twilio_redaction.py -v
 ```
 
-### Test Coverage Priorities
-1. Security functions (credential redaction, validation)
-2. VIP scoring algorithms
-3. Email classification logic
-4. API integration error handling
-5. Data validation and sanitization
+**Expected output:** 3 tests pass in ~0.08 seconds
+- `test_redact_full_number` - Redacts last 4 digits of phone numbers
+- `test_redact_short_number` - Replaces short numbers with [REDACTED]
+- `test_passthrough_non_dict` - Passes through non-dict inputs
 
-## 🎯 Business Domain Knowledge
+**Test Framework:** pytest 9.0.2
+**Test Location:** `tests/` directory
+**Import Pattern:** Tests import from root-level Python modules (e.g., `from TWILIO_WHATSAPP_LINDY_SETUP import redact_sandbox_info`)
 
-### VIP Contact System
-- **VIP Score Range**: 0-100 (40+ is VIP threshold)
-- **Scoring Weights**: 
-  - Recent activity: 30%
-  - Frequency: 25%
-  - Business size: 20%
-  - Payment reliability: 15%
-  - Relationship depth: 10%
+### Running Python Scripts
 
-### Urgency Detection
-- **Languages**: Czech (primary), English, German
-- **Priority Levels**: 1-10 scale
-- **Categories**: crisis, urgent, financial, meeting
-- **Response Time Targets**: <2 hours for urgent, <4 hours for normal
+**All scripts run standalone but require environment variables:**
 
-### Multi-Language Keywords
-Always include Czech, English, and German equivalents:
-```python
-urgency_patterns = {
-    'czech': ['naléhavé', 'urgent', 'důležité'],
-    'english': ['urgent', 'asap', 'critical'],
-    'german': ['dringend', 'sofort', 'wichtig']
-}
+```bash
+# VIP Analyzer (requires SUPABASE_URL and SUPABASE_KEY)
+python3 SUPABASE_VIP_ANALYZER.py
+
+# Email Processor (expects VIP analysis data, has test mode)
+python3 INTELLIGENT_EMAIL_PROCESSOR.py
+
+# Missive Assistant (requires MISSIVE_API_TOKEN, SUPABASE_KEY)
+python3 MISSIVE_AI_ASSISTANT.py
 ```
 
-### Email Classification
-- **VIP Status**: Boolean based on vip_score
-- **Priority Level**: 1-10 integer
-- **Urgency**: Boolean detection from keywords
-- **Processing Confidence**: 0.0-1.0 float (0.8+ threshold)
+**Known Behavior:**
+- Scripts fail gracefully with descriptive error messages if environment variables are missing
+- `INTELLIGENT_EMAIL_PROCESSOR.py` logs warning if VIP analysis file not found at `/tmp/vip_analysis_complete.json` but continues with test data
+- Scripts use Python's `logging` module with INFO level by default
 
-## 📊 Data Models & Patterns
+### Python Dependencies
 
-### Common Dataclass Patterns
-```python
-@dataclass
-class EmailProcessingResult:
-    email_id: str
-    sender: str
-    subject: str
-    classification: str
-    priority_level: int
-    vip_status: bool
-    urgency_detected: bool
-    suggested_response: str
-    processing_confidence: float
+**Standard library used extensively:** No requirements.txt file exists.
 
-@dataclass
-class VIPContact:
-    email: str
-    name: str
-    company: str
-    vip_score: float
-    reasons: List[str]
-    activity_pattern: str
-    urgency_triggers: List[str]
-    relationship_type: str
+**Required pip packages:**
+- `requests` (version 2.31.0 verified working) - Used by all Python scripts
+- `pytest` (version 9.0.2) - For testing
+
+**Installation (if needed):**
+```bash
+pip install requests pytest
 ```
 
-### API Response Patterns
-```python
-# Supabase queries return lists of dicts
-contacts = supabase.table('contacts').select('*').execute()
-for contact in contacts.data:
-    # Process each contact
-    
-# Error handling with descriptive messages
-try:
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    return response.json()
-except requests.exceptions.RequestException as e:
-    self.logger.error(f"API request failed: {e}")
-    raise
+### Docker Setup
+
+**Command:** Use `docker compose` (newer syntax), NOT `docker-compose`
+
+```bash
+# Validate configuration (will warn about missing env vars - this is expected)
+docker compose config --quiet
+
+# Build services (requires .env file with all variables set)
+docker compose build
+
+# Start services (requires .env file)
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
 ```
 
-## 🚀 Development Workflow
+**Docker Compose Services (7 total):**
+1. `hub-ui` - Communication Hub UI on port 3000
+2. `comm-processor` - Unified communication processor
+3. `n8n` - Workflow engine on port 5678
+4. `postgres` - Database on port 5432
+5. `redis` - Cache on port 6379
+6. `backup-service` - Automated backups
+7. `health-monitor` - Service monitoring
 
-### Phase-Based Development
-Project is organized in 6 phases:
-1. **Phase 1** ✅ - Email Intelligence (DEPLOYED)
-2. **Phase 2** 🔄 - Conversation Intelligence (NEXT)
-3. **Phase 3** 📋 - Document Intelligence (PLANNED)
-4. **Phase 4** 📱 - Social Media Automation (PLANNED)
-5. **Phase 5** 💬 - Advanced Communications (PLANNED)
-6. **Phase 6** 🧠 - Multi-Agent AI System (PLANNED)
+**IMPORTANT:** Docker services reference subdirectories that don't exist in this repo (hub-ui/, comm-processor/, backup-service/, health-monitor/). These are defined in docker-compose.yml but the Dockerfiles are not present. This appears to be infrastructure configuration for a larger deployment.
 
-### File Organization
-```
-/
-├── *.py                    # Core Python modules (descriptive names)
-├── *.md                    # Documentation (comprehensive, emoji-rich)
-├── .github/                # GitHub configuration
-├── mcp-gateway/            # MCP protocol integrations
-├── phase6_workflows/       # N8n workflow JSON files
-├── tests/                  # pytest test files
-├── docker-compose.yml      # Service orchestration
-├── env.example             # Environment template (safe to commit)
-└── .env                    # Actual secrets (NEVER commit)
-```
+## Validation and CI/CD
 
-### Naming Conventions
-- **Python Files**: `UPPERCASE_WITH_UNDERSCORES.py` for main modules
-- **Documentation**: `UPPERCASE_WITH_UNDERSCORES.md` for major docs
-- **Config Files**: `lowercase-with-hyphens.yml`
-- **Variables**: `snake_case` for Python
-- **Classes**: `PascalCase`
-- **Constants**: `UPPER_SNAKE_CASE`
+**No GitHub Actions workflows exist.** There is no automated CI/CD pipeline.
 
-## 🔧 Common Patterns & Best Practices
+**Manual validation steps:**
+1. Run pytest: `python3 -m pytest tests/ -v`
+2. Syntax check Python files: `python3 -m py_compile <filename>.py`
+3. Docker config validation: `docker compose config --quiet`
 
-### API Integration Pattern
-```python
-class ServiceIntegration:
-    def __init__(self):
-        # 1. Load credentials from environment
-        self.api_key = os.getenv('SERVICE_API_KEY')
-        
-        # 2. Validate credentials
-        if not self.api_key or 'your_' in self.api_key:
-            raise ValueError("SERVICE_API_KEY is required")
-        
-        # 3. Setup headers
-        self.headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
-        }
-        
-        # 4. Setup logging
-        self.logger = logging.getLogger(__name__)
-    
-    def make_request(self, endpoint: str) -> Dict[str, Any]:
-        """Make authenticated API request with error handling"""
-        try:
-            response = requests.get(
-                f"{self.api_base}/{endpoint}",
-                headers=self.headers
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request to {endpoint} failed: {e}")
-            raise
-```
+## Code Conventions and Architecture
 
-### Cost Optimization Pattern
-- Prefer free tiers: Google Gemini, Hugging Face
-- Cache results in Supabase to avoid reprocessing
-- Batch API calls when possible
-- Document cost per operation in comments
+### Python Code Style
+- Scripts use `#!/usr/bin/env python3` shebang
+- Heavy use of dataclasses for structured data (@dataclass decorator)
+- Logging via Python's logging module (INFO level)
+- Environment variables loaded via `os.getenv()` with validation
+- Type hints in function signatures (typing module: Dict, List, Optional, Any)
+- Error handling with descriptive ValueError messages for missing config
 
-### Multi-Language Support
-Always design for Czech/English/German:
-```python
-LANGUAGE_PATTERNS = {
-    'czech': {...},
-    'english': {...},
-    'german': {...}
-}
+### Security Practices
+**CRITICAL - NEVER commit credentials:**
+- All sensitive data MUST be in environment variables
+- `.env` file is in `.gitignore`
+- See `SECURITY.md` for detailed security policy
+- Example validation from `SUPABASE_VIP_ANALYZER.py`:
+  ```python
+  if not self.supabase_url or 'your-project' in self.supabase_url:
+      raise ValueError("SUPABASE_URL environment variable is required...")
+  ```
 
-def detect_urgency(text: str, language: str = 'czech') -> bool:
-    patterns = LANGUAGE_PATTERNS.get(language, LANGUAGE_PATTERNS['czech'])
-    # Detection logic
-```
+### API Integration Patterns
+- **Supabase:** Headers include `apikey` and `Authorization: Bearer {key}`
+- **Missive:** Authorization via `Bearer {token}`
+- **Twilio:** Basic auth with base64 encoded SID:AUTH_TOKEN
+- **N8n Workflows:** Use polling (not webhooks) for safety; all start INACTIVE
 
-## 💡 AI-Specific Guidelines
+### Data Flow Architecture
+1. **Email Intelligence:** Supabase VIP data → Email Processor → Missive integration
+2. **Workflow Automation:** Notion/Asana sync via n8n (Phase 6)
+3. **Communication Hub:** Multiple services orchestrated via Docker Compose
 
-### OpenAI Integration
-- Use environment variables for API keys
-- Implement retry logic for rate limits
-- Cache responses when appropriate
-- Document token costs in comments
+## Common Pitfalls and Known Issues
 
-### Prompt Engineering
-- Context-aware prompts with business data
-- Multi-language support in system messages
-- VIP status and urgency in prompt context
-- Temperature settings documented per use case
+### Environment Variable Issues
+**SYMPTOM:** Script fails with "variable is required" error
+**SOLUTION:** Create `.env` file from `env.example` and set real values
 
-### Local AI Models (Ollama)
-- DeepSeek R1 (33B) for reasoning
-- Qwen2.5 (14B) for multilingual
-- Document minimum hardware requirements
-- Fallback to cloud APIs if local unavailable
+### Test Import Errors
+**SYMPTOM:** `ModuleNotFoundError: No module named 'TWILIO_WHATSAPP_LINDY_SETUP'`
+**CAUSE:** Tests run from wrong directory
+**SOLUTION:** Always run pytest from repository root: `cd /home/runner/work/premium-gastro-ai-assistant/premium-gastro-ai-assistant && python3 -m pytest tests/`
 
-## 📝 Documentation Requirements
+### Docker Compose Version
+**SYMPTOM:** `docker-compose: command not found`
+**SOLUTION:** Use `docker compose` (space, not hyphen) - newer Docker CLI syntax
 
-### Code Documentation
-- Module-level docstrings with clear purpose
-- Complex algorithms need explanation comments
-- Business logic thresholds documented
-- API endpoint documentation with examples
+### Missing VIP Analysis File
+**SYMPTOM:** Email processor logs "Failed to load VIP analysis"
+**BEHAVIOR:** This is expected - script continues with test data
+**SOLUTION:** Run `SUPABASE_VIP_ANALYZER.py` first to generate `/tmp/vip_analysis_complete.json`
 
-### User Documentation
-- Setup instructions with prerequisites
-- Environment variable configuration
-- API key acquisition steps
-- Troubleshooting common issues
-- ROI and business impact metrics
+### n8n Workflow Activation
+**CRITICAL:** All Phase 6 workflows are INACTIVE by default for safety
+**BEFORE ACTIVATION:** Configure credentials via n8n UI (see `phase6_workflows/IMPORT_INSTRUCTIONS.md`)
+**ACCESS:** n8n runs on http://localhost:5678 (or http://127.0.0.1:5678 for Safari compatibility)
 
-### Technical Documentation
-- Architecture diagrams (ASCII art or Markdown)
-- Data flow diagrams
-- Integration points clearly mapped
-- Cost analysis per service
-- Performance benchmarks
+## Making Code Changes
 
-## 🎨 Markdown Documentation Style
+### Before Changing Python Scripts
+1. **Understand the environment:** Scripts heavily use environment variables - check `env.example`
+2. **Run existing tests:** `python3 -m pytest tests/ -v` to establish baseline
+3. **Check imports:** Scripts use standard library + requests module
+4. **Preserve security patterns:** Keep environment variable validation logic
 
-### Headers with Emojis
-```markdown
-# 🚀 Main Title
-## 🎯 Purpose Section
-### 📋 Implementation Details
-#### 💡 Technical Notes
+### Testing Changes
+1. **Add tests for new functions:** Follow pattern in `tests/test_twilio_redaction.py`
+2. **Run tests after changes:** `python3 -m pytest tests/ -v`
+3. **Verify scripts run:** Test with appropriate environment variables set
+
+### Documentation Changes
+- Update relevant Phase documentation if changing automation logic
+- Update `README.md` if changing project structure or adding major features
+- Update `SECURITY.md` if changing credential handling
+
+## Quick Reference Commands
+
+```bash
+# Test suite
+python3 -m pytest tests/ -v
+
+# Syntax validation
+python3 -m py_compile *.py
+
+# Run with environment (example)
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_KEY="your-key-here"
+python3 SUPABASE_VIP_ANALYZER.py
+
+# Docker validation
+docker compose config --quiet
+
+# Check Docker services
+docker compose ps
 ```
 
-### Code Blocks
-Always specify language for syntax highlighting:
-```markdown
-\`\`\`python
-# Python code
-\`\`\`
+## Important Notes for Coding Agents
 
-\`\`\`bash
-# Shell commands
-\`\`\`
+1. **Trust these instructions** - They are comprehensive and tested. Only search for additional information if instructions are incomplete or found to be in error.
 
-\`\`\`json
-# JSON data
-\`\`\`
-```
+2. **Environment variables are mandatory** - All Python scripts validate required variables and fail with helpful errors if not set. Don't try to run scripts without proper .env setup.
 
-### Lists and Structure
-- Use `-` for unordered lists
-- Use numbered lists for sequential steps
-- Use checkboxes for task tracking: `- [ ]` or `- [x]`
-- Section dividers: `---`
+3. **Tests are minimal** - Only 3 unit tests exist for the redaction function. Add tests for new functionality following the existing pytest pattern.
 
-## 🚨 Error Handling
+4. **No automated CI** - Manual testing is required. Always run pytest before committing changes.
 
-### Required Error Handling
-1. **Environment Variable Validation**: Descriptive errors on startup
-2. **API Failures**: Retry logic with exponential backoff
-3. **Data Validation**: Type checking and sanitization
-4. **Network Issues**: Timeout configuration and handling
-5. **Rate Limits**: Respect API quotas, implement backoff
+5. **Docker infrastructure is incomplete** - docker-compose.yml references services that don't have Dockerfiles in repo. This is intentional - it's deployment configuration for external infrastructure.
 
-### Error Message Pattern
-```python
-if not self.required_config:
-    raise ValueError(
-        "REQUIRED_CONFIG environment variable is required and must be valid. "
-        "Please set it in your .env file or environment. "
-        "See env.example for the correct format."
-    )
-```
+6. **Security is paramount** - Never commit API keys, tokens, or credentials. Use environment variables exclusively.
 
-## 🎯 Performance Considerations
+7. **N8n workflows are documented externally** - See `phase6_workflows/` for complete workflow definitions and import instructions.
 
-### Optimization Priorities
-1. **Cost**: Minimize API calls, prefer free tiers
-2. **Speed**: Cache VIP data, batch operations
-3. **Reliability**: Retry failed operations, graceful degradation
-4. **Scalability**: Design for 40,000+ contacts
-
-### Caching Strategy
-- VIP scores cached in Supabase (daily refresh)
-- Email classification results stored for learning
-- Conversation history for context
-- API responses cached when appropriate
-
-## 📞 Integration-Specific Notes
-
-### Missive (Email Hub)
-- Primary email interface for business owner
-- Shared mailboxes: `info@`, `accounting@`, `marketing@`
-- Personal inbox as central cockpit
-- Webhook integration for real-time processing
-
-### Supabase (Intelligence Database)
-- 40,803+ business records
-- VIP contact metadata and scoring
-- Conversation history and analytics
-- Full-text search capabilities
-
-### N8n (Workflow Orchestrator)
-- Bridges Czech systems without APIs
-- Coordinates email, voice, data handoffs
-- Self-hosted or cloud options
-- 8,000+ integration nodes
-
-### Twilio (Communication)
-- SMS, WhatsApp, Voice capabilities
-- Credentials in 1Password
-- Escalation for VIP/urgent cases
-- Integration with Missive workflows
-
-## 🎓 When Suggesting Code
-
-### Always Consider
-1. **Security**: Never hardcode secrets, validate inputs
-2. **Cost**: Document API costs, prefer free tiers
-3. **Multi-language**: Czech/English/German support
-4. **Business Context**: VIP priority, urgency detection
-5. **Existing Patterns**: Follow established code style
-6. **Type Safety**: Use type hints consistently
-7. **Error Handling**: Graceful degradation
-8. **Documentation**: Update relevant .md files
-9. **Environment**: Document new env variables in env.example
-10. **Testing**: Suggest test cases for new functionality
-
-### Code Review Checklist
-- [ ] No hardcoded credentials
-- [ ] Type hints on functions
-- [ ] Error handling implemented
-- [ ] Logging for debugging
-- [ ] Docstrings present
-- [ ] Multi-language if applicable
-- [ ] Cost-optimized approach
-- [ ] Follows existing patterns
-- [ ] Tests included/updated
-- [ ] Documentation updated
-
-## 🌍 Business & Cultural Context
-
-### Target Market
-- **Region**: Central Europe (Prague-based)
-- **Industry**: Premium food service / gastronomy
-- **Primary Language**: Czech (with English/German for international)
-- **Business Model**: B2B and B2C catering, events, restaurant services
-
-### Communication Preferences
-- **Email**: Primary business channel (Missive)
-- **WhatsApp**: Client communication
-- **Phone**: VIP escalation
-- **Social Media**: Marketing and engagement
-
-### Priority System
-1. **VIP Clients**: High-value, long-term relationships
-2. **Urgent Issues**: Service failures, payment problems
-3. **New Opportunities**: Potential new business
-4. **Routine**: Standard inquiries and operations
-
----
-
-## 📚 Quick Reference
-
-### Start New Feature
-1. Check `PREMIUM_GASTRO_ASSISTANT_MASTERPLAN.md` for phase alignment
-2. Follow existing file naming conventions
-3. Create with module docstring and type hints
-4. Add environment variables to `env.example` if needed
-5. Implement with security and cost optimization
-6. Add tests to `/tests/`
-7. Update relevant documentation
-8. Document ROI and business impact
-
-### Add New Integration
-1. Research API costs and free tier limits
-2. Add credentials to `env.example` (placeholder)
-3. Create integration class following API Integration Pattern
-4. Implement error handling and retry logic
-5. Add logging for debugging
-6. Document in main README.md
-7. Update architecture documentation if significant
-
-### Debug Issues
-1. Check environment variables are set correctly
-2. Review logs for error messages
-3. Verify API credentials and quotas
-4. Test with minimal data first
-5. Check Supabase data integrity
-6. Validate network connectivity
-7. Review recent code changes
-
----
-
-**Remember**: This is a production system handling real business data. Security, cost optimization, and reliability are paramount. Every change should consider business impact and ROI.
+8. **The codebase is documentation-heavy** - 17+ markdown files contain critical context about the multi-phase automation project. Reference them when making changes to understand business logic.
