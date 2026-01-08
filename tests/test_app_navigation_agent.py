@@ -24,7 +24,7 @@ class TestNavigationAgent:
     """Test suite for App Navigation Agent"""
     
     @pytest.fixture
-    async def agent(self):
+    def agent(self):
         """Create a fresh agent for each test"""
         return AppNavigationAgent()
     

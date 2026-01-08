@@ -526,7 +526,11 @@ class AppNavigationAgent:
         
         # Check if target requires admin permissions
         if target in self.navigation_rules["requires_admin"]:
-            # In real implementation, check actual permissions
+            # NOTE: Permission checking is simplified for prototype
+            # In production, implement actual permission validation:
+            # - Check user roles from authentication system
+            # - Verify admin privileges from database
+            # - Validate API tokens for elevated access
             return {"valid": True}  # Simplified for prototype
         
         # Check if navigation path exists
@@ -546,7 +550,12 @@ class AppNavigationAgent:
         """Check if all dependencies for target state are satisfied"""
         capability = self.app_structure[target_state]
         
-        # In real implementation, check if modules/files exist
+        # NOTE: Dependency checking is simplified for prototype
+        # In production, implement actual module verification:
+        # - Check if Python modules exist: importlib.util.find_spec(module_name)
+        # - Verify API keys are configured for external services
+        # - Test database connections (Supabase, etc.)
+        # - Validate required files exist in filesystem
         # For prototype, assume all dependencies are satisfied
         return {
             "satisfied": True,
