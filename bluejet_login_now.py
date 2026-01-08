@@ -76,10 +76,12 @@ def login_and_explore():
         if input_type == 'password':
             form_data[name] = password
             print(f"\n✅ Set password in field: {name}")
-        elif input_type == 'text' or 'user' in name.lower() or 'login' in name.lower():
-            if not form_data.get(name) or form_data[name] == '':
-                form_data[name] = username
-                print(f"✅ Set username in field: {name}")
+        elif input_type == 'text' and ('name' in name.lower() or 'user' in name.lower()):
+            form_data[name] = username
+            print(f"✅ Set username in field: {name}")
+        elif input_type == 'submit' and 'login' in name.lower():
+            form_data[name] = 'Přihlásit'
+            print(f"✅ Set submit button: {name}")
 
     # Submit
     print(f"\n🚀 Submitting login...")
