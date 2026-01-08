@@ -32,7 +32,7 @@ async def example_1_email_vip_workflow():
                 "agent": "vip_agent",
                 "action": "identify_vip",
                 "parameters": {
-                    "email": "faktury@zatisigroup.cz",
+                    "email": "client@example.com",
                     "check_supabase": True
                 }
             },
