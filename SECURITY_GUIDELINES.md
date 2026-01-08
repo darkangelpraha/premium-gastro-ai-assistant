@@ -1,22 +1,31 @@
 # Security Guidelines for Premium Gastro AI Assistant
 
-## 🔒 Critical Security Rules
+## ⚠️ ZERO TOLERANCE POLICY
 
-**NEVER EVER:**
+**ABSOLUTE RULE: NO CREDENTIALS IN FILES - EVER!**
+
+**STRICTLY PROHIBITED:**
+- ❌ **ZERO placeholders** in .env files - ALL values MUST reference 1Password
+- ❌ **ZERO credentials** stored in any file (.env, config, scripts, etc.)
 - ❌ Commit credentials to Git
 - ❌ Share API keys in chat/email/Slack
 - ❌ Hard-code secrets in source code
 - ❌ Store credentials in code comments
-- ❌ Push `.env` file to GitHub
+- ❌ Push `.env` file to GitHub (even with placeholders)
 - ❌ Screenshot or log sensitive data
 - ❌ Share credentials with Claude in prompts
 - ❌ Include real keys in documentation
+
+**ONLY ACCEPTABLE METHOD:**
+✅ Fetch credentials from 1Password CLI (`op`) on-demand
+✅ Use 1Password item IDs in code (IDs are safe, not secrets)
+✅ Clear credentials from memory immediately after use
 
 ---
 
 ## ✅ Secure Credential Management
 
-### 1. Use 1Password for All Secrets
+### 1. Use 1Password CLI EXCLUSIVELY
 
 **Store in 1Password:**
 - API keys (Claude, OpenAI, Bluejet, etc.)
