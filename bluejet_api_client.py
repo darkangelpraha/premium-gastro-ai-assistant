@@ -19,11 +19,15 @@ def get_credentials():
     # Extract fields
     creds = {}
     for field in data["fields"]:
-        label = field.get("label", "").lower()
+        label = field.get("label", "")
         value = field.get("value")
 
-        if "tokenid" in label:
+        if label == "tokenID":
             creds["token_id"] = value
+        elif "API TokenID" in label or "BLUEJET_API_TOKEN_ID" in label:
+            creds["api_token_id"] = value
+        elif "TOKEN_HASH" in label or "TokenHash" in label:
+            creds["api_token_hash"] = value
         elif field.get("purpose") == "USERNAME":
             creds["username"] = value
         elif field.get("purpose") == "PASSWORD":
@@ -42,60 +46,37 @@ class BluejetAPIClient:
         creds = get_credentials()
 
         print(f"🔐 Authenticating with Bluejet API...")
-        print(f"   Username: {creds['username']}")
         print(f"   Token ID: {creds.get('token_id', 'Not found')}")
+        print(f"   API Token ID: {'Found' if creds.get('api_token_id') else 'Not found'}")
+        print(f"   API Token Hash: {'Found' if creds.get('api_token_hash') else 'Not found'}")
 
         auth_url = f"{self.base_url}/api/v1/users/authenticate"
 
-        # Try authentication with token
-        if creds.get('token_id'):
-            headers = {
-                "Authorization": f"Bearer {creds['token_id']}",
-                "Content-Type": "application/json"
-            }
-
+        # Bluejet API requires TokenID and TokenHash
+        if creds.get('api_token_id') and creds.get('api_token_hash'):
             try:
-                resp = self.session.get(auth_url, headers=headers)
-                print(f"\n📊 Auth response: {resp.status_code}")
+                auth_data = {
+                    "TokenID": creds['api_token_id'],
+                    "TokenHash": creds['api_token_hash']
+                }
+
+                resp = self.session.post(auth_url, json=auth_data)
+                print(f"\n📊 API Token auth response: {resp.status_code}")
 
                 if resp.status_code == 200:
-                    print("✅ Authenticated with token!")
-                    self.session.headers.update(headers)
+                    print("✅ Authenticated with API tokens!")
                     self.authenticated = True
                     return True
                 else:
-                    print(f"⚠️  Token auth failed, trying username/password...")
+                    print(f"❌ API token authentication failed: {resp.text}")
+                    return False
+
             except Exception as e:
-                print(f"⚠️  Token auth error: {e}")
-
-        # Try username/password authentication
-        try:
-            auth_data = {
-                "username": creds['username'],
-                "password": creds['password']
-            }
-
-            resp = self.session.post(auth_url, json=auth_data)
-            print(f"📊 Username/password response: {resp.status_code}")
-
-            if resp.status_code == 200:
-                result = resp.json()
-                print("✅ Authenticated with username/password!")
-
-                # Store any returned token
-                if 'token' in result:
-                    self.session.headers.update({
-                        "Authorization": f"Bearer {result['token']}"
-                    })
-
-                self.authenticated = True
-                return True
-            else:
-                print(f"❌ Authentication failed: {resp.text}")
+                print(f"❌ API token authentication error: {e}")
                 return False
-
-        except Exception as e:
-            print(f"❌ Authentication error: {e}")
+        else:
+            print("❌ Missing API TokenID or TokenHash in 1Password")
+            print("   Please ensure these fields are filled in 1Password item")
             return False
 
     def get_data(self, endpoint=""):
