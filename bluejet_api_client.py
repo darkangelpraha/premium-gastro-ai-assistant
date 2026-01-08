@@ -16,7 +16,7 @@ def get_credentials():
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     data = json.loads(result.stdout)
 
-    # Extract fields
+    # Extract fields - use exact names from 1Password
     creds = {}
     for field in data["fields"]:
         label = field.get("label", "")
@@ -24,9 +24,9 @@ def get_credentials():
 
         if label == "tokenID":
             creds["token_id"] = value
-        elif "API TokenID" in label or "BLUEJET_API_TOKEN_ID" in label:
+        elif label == "BLUEJET_API_TOKEN_ID":
             creds["api_token_id"] = value
-        elif "TOKEN_HASH" in label or "TokenHash" in label:
+        elif label == "BLUEJET_API_TOKEN_HASH":
             creds["api_token_hash"] = value
         elif field.get("purpose") == "USERNAME":
             creds["username"] = value
