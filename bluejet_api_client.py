@@ -7,14 +7,22 @@ import subprocess
 import json
 import requests
 
-LOGIN_ITEM = "dr7o5x765zikuy52kdspkalone"
+API_ITEM = "BlueJet API FULL"
 VAULT = "AI"
 
 def get_credentials():
     """Fetch credentials from 1Password"""
-    cmd = ["/usr/local/bin/op", "item", "get", LOGIN_ITEM, "--vault", VAULT, "--format", "json"]
+    cmd = ["/usr/local/bin/op", "item", "get", API_ITEM, "--vault", VAULT, "--format", "json"]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     data = json.loads(result.stdout)
+
+    # Debug: Show all available fields
+    print(f"\n🔍 DEBUG: All fields in 1Password item:")
+    for field in data.get("fields", []):
+        label = field.get("label", "")
+        field_id = field.get("id", "")
+        has_value = "value" in field and field["value"]
+        print(f"   • {label} (id: {field_id}, has_value: {has_value})")
 
     # Extract fields - use exact names from 1Password
     creds = {}
@@ -22,16 +30,18 @@ def get_credentials():
         label = field.get("label", "")
         value = field.get("value")
 
-        if label == "tokenID":
-            creds["token_id"] = value
-        elif label == "BLUEJET_API_TOKEN_ID":
+        if not value:
+            continue
+
+        # Try both label and id
+        if label == "BLUEJET_API_TOKEN_ID" or field.get("id") == "BLUEJET_API_TOKEN_ID":
             creds["api_token_id"] = value
-        elif label == "BLUEJET_API_TOKEN_HASH":
+        elif label == "BLUEJET_API_TOKEN_HASH" or field.get("id") == "BLUEJET_API_TOKEN_HASH":
             creds["api_token_hash"] = value
-        elif field.get("purpose") == "USERNAME":
-            creds["username"] = value
-        elif field.get("purpose") == "PASSWORD":
-            creds["password"] = value
+        elif "token" in label.lower() and "id" in label.lower():
+            creds["api_token_id"] = value
+        elif "token" in label.lower() and "hash" in label.lower():
+            creds["api_token_hash"] = value
 
     return creds
 
