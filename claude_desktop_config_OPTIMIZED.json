@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "desktop-commander": {
+      "command": "npx",
+      "args": ["-y", "@wonderwhy-er/desktop-commander"]
+    },
+    "beeper": {
+      "command": "npx",
+      "args": ["-y", "@beeper/mcp-remote"]
+    },
+    "mem0": {
+      "command": "/bin/bash",
+      "args": [
+        "-c",
+        "MEM0_API_KEY=$(op read 'op://AI/mem0 API Key/credential') exec npx -y @mem0ai/mcp-server-mem0"
+      ]
+    },
+    "mapi-docs": {
+      "command": "npx",
+      "args": ["-y", "mapi-docs-mcp"]
+    }
+  }
+}
