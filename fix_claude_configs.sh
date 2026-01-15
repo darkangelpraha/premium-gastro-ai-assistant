@@ -1,204 +1,236 @@
 #!/bin/bash
-# Claude Config Consolidation Script
-# This script consolidates multiple config files into ONE primary location
+# Fixed Claude Config Consolidation Script
+# Fixes all bugs from previous version
 
-set -e  # Exit on error
+set -euo pipefail  # Strict error handling
 
 PRIMARY="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-BACKUP_DIR="$HOME/claude_config_backup_$(date +%Y%m%d_%H%M%S)"
+BACKUP_DIR="$HOME/Desktop/claude_config_backup_$(date +%Y%m%d_%H%M%S)"
 
-echo "=== CLAUDE CONFIG CONSOLIDATION ==="
-echo ""
-echo "This script will:"
-echo "  1. Find all Claude config files"
-echo "  2. Backup all files"
-echo "  3. Consolidate to ONE primary location"
-echo "  4. Remove duplicates"
+echo "=== CLAUDE CONFIG CONSOLIDATION (FIXED) ==="
 echo ""
 
-# Safety check
-read -p "Continue? (yes/no): " CONFIRM
-if [ "$CONFIRM" != "yes" ]; then
-  echo "Aborted by user"
-  exit 0
-fi
-
-echo ""
-
-# Create backup directory
-mkdir -p "$BACKUP_DIR"
-echo "✓ Created backup directory: $BACKUP_DIR"
-echo ""
-
-# Find all config files
+# Step 1: Find all configs
 echo "Finding all config files..."
-CONFIGS=""
+CONFIGS=$(mktemp)
+mdfind -name "claude_config.json" 2>/dev/null | grep -v "/node_modules/" | grep -v "/.git/" > "$CONFIGS" || true
+mdfind -name "claude_desktop_config.json" 2>/dev/null | grep -v "/node_modules/" | grep -v "/.git/" >> "$CONFIGS" || true
 
-# Known locations
-KNOWN_LOCATIONS=(
-  "$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-  "$HOME/.config/claude/claude_config.json"
-  "$HOME/.claude_config.json"
-  "$HOME/Library/Preferences/claude_config.json"
-  "$HOME/.claude/config.json"
-  "$HOME/Documents/claude_config.json"
-)
+# Remove duplicates
+sort -u "$CONFIGS" -o "$CONFIGS"
 
-for loc in "${KNOWN_LOCATIONS[@]}"; do
-  if [ -f "$loc" ]; then
-    CONFIGS="$CONFIGS"$'\n'"$loc"
+FILE_COUNT=$(wc -l < "$CONFIGS" | tr -d ' ')
+
+if [ "$FILE_COUNT" -eq 0 ]; then
+  echo "No config files found!"
+  rm "$CONFIGS"
+  exit 1
+fi
+
+echo "Found $FILE_COUNT config file(s)"
+echo ""
+
+# Step 2: Check for symlinks
+echo "Checking for symlinks..."
+HAS_SYMLINKS=false
+while IFS= read -r file; do
+  if [ -L "$file" ]; then
+    echo "  SYMLINK: $file -> $(readlink "$file")"
+    HAS_SYMLINKS=true
   fi
-done
+done < "$CONFIGS"
 
-# Spotlight search
-SPOTLIGHT=$(mdfind -name claude_config.json 2>/dev/null | grep -v "/node_modules/" | grep -v "/.git/" || true)
-if [ ! -z "$SPOTLIGHT" ]; then
-  CONFIGS="$CONFIGS"$'\n'"$SPOTLIGHT"
+if [ "$HAS_SYMLINKS" = true ]; then
+  echo ""
+  echo "⚠️  SYMLINKS DETECTED!"
+  echo "Consolidation may break symlink structure."
+  read -p "Continue anyway? (yes/no): " CONFIRM
+  if [ "$CONFIRM" != "yes" ]; then
+    echo "Aborted"
+    rm "$CONFIGS"
+    exit 0
+  fi
 fi
 
-SPOTLIGHT_DESKTOP=$(mdfind -name claude_desktop_config.json 2>/dev/null | grep -v "/node_modules/" | grep -v "/.git/" || true)
-if [ ! -z "$SPOTLIGHT_DESKTOP" ]; then
-  CONFIGS="$CONFIGS"$'\n'"$SPOTLIGHT_DESKTOP"
+echo ""
+
+# Step 3: Check which file Claude is using
+echo "Checking which config Claude Desktop is using..."
+CLAUDE_PID=$(pgrep -i "Claude Desktop" | head -1 || echo "")
+
+if [ -n "$CLAUDE_PID" ]; then
+  ACTIVE_CONFIG=$(lsof -p "$CLAUDE_PID" 2>/dev/null | grep -i "config.json" | awk '{print $9}' || echo "")
+  if [ -n "$ACTIVE_CONFIG" ]; then
+    echo "  ✓ Claude is using: $ACTIVE_CONFIG"
+  else
+    echo "  ⚠️  Could not determine active config"
+    ACTIVE_CONFIG=""
+  fi
+else
+  echo "  ⚠️  Claude Desktop is not running"
+  echo "  (Cannot detect which config is in use)"
+  ACTIVE_CONFIG=""
 fi
 
-# Remove duplicates and empty lines
-CONFIGS=$(echo "$CONFIGS" | sort -u | grep -v "^$")
+echo ""
 
-if [ -z "$CONFIGS" ]; then
-  echo "❌ No config files found!"
-  echo "Creating new config at primary location..."
-  mkdir -p "$(dirname "$PRIMARY")"
-  echo '{"mcpServers":{}}' > "$PRIMARY"
-  echo "✓ Created: $PRIMARY"
+# Step 4: Backup EVERYTHING
+echo "Creating backup..."
+mkdir -p "$BACKUP_DIR"
+
+while IFS= read -r file; do
+  if [ -f "$file" ]; then
+    SAFE_NAME=$(echo "$file" | sed "s|$HOME|HOME|g" | tr '/' '_')
+    cp -p "$file" "$BACKUP_DIR/$SAFE_NAME"
+    echo "  ✓ Backed up: $(basename "$file")"
+  fi
+done < "$CONFIGS"
+
+echo ""
+echo "✓ Backup complete: $BACKUP_DIR"
+echo ""
+
+# Step 5: Compare file contents
+echo "Analyzing file contents..."
+TEMP_HASHES=$(mktemp)
+
+while IFS= read -r file; do
+  if [ -f "$file" ]; then
+    HASH=$(md5 -q "$file")
+    SIZE=$(stat -f%z "$file")
+    MTIME=$(stat -f%m "$file")
+    echo "$HASH|$MTIME|$SIZE|$file" >> "$TEMP_HASHES"
+  fi
+done < "$CONFIGS"
+
+UNIQUE_HASHES=$(cut -d'|' -f1 "$TEMP_HASHES" | sort -u | wc -l | tr -d ' ')
+
+echo "Files found: $FILE_COUNT"
+echo "Unique configs: $UNIQUE_HASHES"
+echo ""
+
+if [ "$UNIQUE_HASHES" -eq 1 ]; then
+  echo "✓ All files have identical content"
+  echo "  Issue is redundancy, not conflicting configs"
+else
+  echo "⚠️  FILES HAVE DIFFERENT CONTENT!"
+  echo "  This confirms your hypothesis"
+  echo ""
+  echo "Content comparison:"
+  while IFS='|' read -r hash mtime size file; do
+    echo "  $file"
+    echo "    Modified: $(date -r "$mtime" "+%Y-%m-%d %H:%M:%S")"
+    echo "    Size: $size bytes"
+    echo "    Hash: $hash"
+    echo ""
+  done < "$TEMP_HASHES"
+fi
+
+# Step 6: Select primary config
+echo "Selecting primary configuration..."
+
+if [ -n "$ACTIVE_CONFIG" ] && [ -f "$ACTIVE_CONFIG" ]; then
+  # Use the file Claude is actively using
+  SELECTED="$ACTIVE_CONFIG"
+  echo "  Using active config: $SELECTED"
+elif [ -f "$PRIMARY" ]; then
+  # Use existing primary location
+  SELECTED="$PRIMARY"
+  echo "  Using existing primary: $SELECTED"
+else
+  # Use most recently modified
+  SELECTED=$(sort -t'|' -k2 -rn "$TEMP_HASHES" | head -1 | cut -d'|' -f4)
+  echo "  Using most recent: $SELECTED"
+fi
+
+echo ""
+
+# Step 7: Validate selected config
+echo "Validating selected config..."
+if python3 -m json.tool "$SELECTED" > /dev/null 2>&1; then
+  echo "  ✓ Valid JSON"
+else
+  echo "  ✗ INVALID JSON!"
+  echo "  Config is corrupted. Aborting!"
+  rm "$CONFIGS" "$TEMP_HASHES"
+  exit 1
+fi
+
+echo ""
+
+# Step 8: Show preview and confirm
+echo "=== PREVIEW OF CHANGES ==="
+echo ""
+echo "Will keep: $SELECTED"
+echo "Will remove:"
+while IFS= read -r file; do
+  if [ "$file" != "$SELECTED" ]; then
+    echo "  - $file"
+  fi
+done < "$CONFIGS"
+
+echo ""
+echo "Primary location will be: $PRIMARY"
+if [ "$SELECTED" != "$PRIMARY" ]; then
+  echo "(Will copy from $SELECTED)"
+fi
+
+echo ""
+read -p "Proceed with consolidation? (yes/no): " FINAL_CONFIRM
+if [ "$FINAL_CONFIRM" != "yes" ]; then
+  echo "Aborted"
+  rm "$CONFIGS" "$TEMP_HASHES"
   exit 0
 fi
 
-echo "Found config files:"
-echo "$CONFIGS" | nl
 echo ""
 
-# Backup all configs
-echo "Backing up all config files..."
-echo "$CONFIGS" | while read -r config; do
-  if [ -f "$config" ]; then
-    FILENAME=$(basename "$config")
-    DIRNAME=$(dirname "$config" | sed "s|$HOME|HOME|g" | tr '/' '_')
-    BACKUP_NAME="${DIRNAME}_${FILENAME}"
-    cp "$config" "$BACKUP_DIR/$BACKUP_NAME"
-    echo "  ✓ Backed up: $config → $BACKUP_NAME"
-  fi
-done
+# Step 9: Perform consolidation
+echo "Consolidating configs..."
 
-echo ""
-echo "Analyzing config files..."
-echo ""
-
-# Find the most recently modified config
-LATEST=""
-LATEST_TIME=0
-
-echo "$CONFIGS" | while read -r config; do
-  if [ -f "$config" ]; then
-    MOD_TIME=$(stat -f%m "$config" 2>/dev/null || echo 0)
-    HASH=$(md5 -q "$config")
-    SIZE=$(stat -f%z "$config")
-    echo "  $config"
-    echo "    Modified: $(stat -f%Sm "$config")"
-    echo "    Size: $SIZE bytes"
-    echo "    Hash: $HASH"
-    echo ""
-  fi
-done
-
-# Determine which config to use as primary
-echo "Selecting primary config..."
-
-# Check if primary location already exists and has content
-if [ -f "$PRIMARY" ] && [ $(stat -f%z "$PRIMARY") -gt 10 ]; then
-  echo "  Using existing primary config (already at correct location)"
-  SELECTED="$PRIMARY"
-else
-  # Find most recently modified
-  SELECTED=$(echo "$CONFIGS" | while read -r config; do
-    if [ -f "$config" ]; then
-      echo "$(stat -f%m "$config") $config"
-    fi
-  done | sort -rn | head -1 | cut -d' ' -f2-)
-
-  echo "  Selected most recently modified: $SELECTED"
-fi
-
-echo ""
-echo "Creating primary config at: $PRIMARY"
-
-# Ensure directory exists
+# Ensure primary directory exists
 mkdir -p "$(dirname "$PRIMARY")"
 
-# Copy selected config to primary location
+# Copy selected to primary if needed
 if [ "$SELECTED" != "$PRIMARY" ]; then
-  cp "$SELECTED" "$PRIMARY"
-  echo "  ✓ Copied from: $SELECTED"
-else
-  echo "  ✓ Already at primary location"
+  cp -p "$SELECTED" "$PRIMARY"
+  echo "  ✓ Copied to primary location"
 fi
 
-echo ""
-echo "Removing duplicate config files..."
+# Remove duplicates (fixed: not in subshell)
 REMOVED=0
-echo "$CONFIGS" | while read -r config; do
-  if [ -f "$config" ] && [ "$config" != "$PRIMARY" ]; then
-    echo "  Removing: $config"
-    rm "$config"
+while IFS= read -r file; do
+  if [ "$file" != "$PRIMARY" ] && [ -f "$file" ]; then
+    rm "$file"
+    echo "  ✓ Removed: $file"
     REMOVED=$((REMOVED + 1))
   fi
-done
+done < "$CONFIGS"
 
-if [ $REMOVED -eq 0 ]; then
-  echo "  No duplicates to remove"
-fi
+echo ""
+echo "Removed $REMOVED duplicate(s)"
+
+# Cleanup temp files
+rm "$CONFIGS" "$TEMP_HASHES"
 
 echo ""
 echo "=== CONSOLIDATION COMPLETE ==="
 echo ""
-echo "Primary config location: $PRIMARY"
-echo "File exists: $([ -f "$PRIMARY" ] && echo "YES ✓" || echo "NO ✗")"
-echo "File size: $(stat -f%z "$PRIMARY") bytes"
+echo "✓ Primary config: $PRIMARY"
+echo "✓ Backup location: $BACKUP_DIR"
 echo ""
-echo "Content preview:"
-head -20 "$PRIMARY"
+echo "NEXT STEPS:"
+echo "1. Restart Claude Desktop: killall Claude && open -a Claude"
+echo "2. Verify configuration works"
+echo "3. Test for 24 hours"
+echo "4. If issues: restore from $BACKUP_DIR"
 echo ""
-
 echo "=== VERIFICATION ==="
-REMAINING=$(mdfind -name "claude*config*.json" 2>/dev/null | grep -v "/node_modules/" | grep -v "/.git/" | grep -v "$BACKUP_DIR" | wc -l)
-echo "Config files remaining on system: $REMAINING"
-
-if [ $REMAINING -eq 1 ]; then
+REMAINING=$(mdfind -name "claude*config*.json" 2>/dev/null | grep -v "/node_modules/" | grep -v "/.git/" | grep -v "$BACKUP_DIR" | wc -l | tr -d ' ')
+echo "Config files remaining: $REMAINING"
+if [ "$REMAINING" -eq 1 ]; then
   echo "✅ SUCCESS - Only one config file remains"
 else
-  echo "⚠️  Warning: Found $REMAINING config files (expected 1)"
+  echo "⚠️  Warning: Found $REMAINING files (expected 1)"
 fi
-
-echo ""
-echo "=== NEXT STEPS ==="
-echo ""
-echo "1. Quit Claude Desktop completely:"
-echo "   • Press Cmd+Q in Claude Desktop"
-echo "   • Run: killall Claude"
-echo ""
-echo "2. Verify no Claude processes:"
-echo "   ps aux | grep Claude"
-echo ""
-echo "3. Restart Claude Desktop:"
-echo "   open -a Claude"
-echo ""
-echo "4. Test your configuration:"
-echo "   • Check MCP servers are loading"
-echo "   • Verify settings persist"
-echo ""
-echo "5. If issues occur, restore from backup:"
-echo "   $BACKUP_DIR"
-echo ""
-echo "=== PROOF OF FIX ==="
-echo "Run this to verify only one config exists:"
-echo "  mdfind -name 'claude*config*.json' | grep -v node_modules"
 echo ""
