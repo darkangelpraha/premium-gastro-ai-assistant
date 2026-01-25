@@ -18,10 +18,11 @@ chmod +x setup-bluejet-sync.sh
 ./setup-bluejet-sync.sh
 ```
 
-This will retrieve credentials from your 1Password "Missive | BJ" vault:
-- `op://Missive | BJ/BlueJet API FULL/url`
-- `op://Missive | BJ/BlueJet API FULL/tokenID`
-- `op://Missive | BJ/BlueJet API FULL/tokenHash`
+This will retrieve credentials from your 1Password "Missive | BJ" vault → "BlueJet API FULL":
+- `username` (svejkovsky)
+- `BLUEJET_API_TOKEN_ID`
+- `BLUEJET_API_TOKEN_HASH`
+- Base URL: https://czeco.bluejet.cz
 
 ### Step 3: First Sync (Manual)
 ```bash
@@ -84,16 +85,14 @@ Uploaded batch: 100/40123 products
    - Generate new API token
    - Copy Token ID and Token Hash
 
-2. **Add to 1Password:**
-   ```bash
-   op item create \
-     --vault "Missive | BJ" \
-     --category "API Credential" \
-     --title "BlueJet API FULL" \
-     url="https://your-instance.bluejet.cz" \
-     tokenID="your_token_id" \
-     tokenHash="your_token_hash"
-   ```
+2. **Structure should match:**
+   - Vault: "Missive | BJ"
+   - Credential: "BlueJet API FULL"
+   - Fields:
+     - username: svejkovsky
+     - BLUEJET_API_TOKEN_ID: (your token)
+     - BLUEJET_API_TOKEN_HASH: (your hash)
+     - url: https://czeco.bluejet.cz
 
 3. **Run setup again:**
    ```bash
@@ -188,8 +187,12 @@ curl -X POST http://localhost:8080/query -d '{
 # Check 1Password vault
 op item list --vault "Missive | BJ"
 
-# Verify paths
-op read "op://Missive | BJ/BlueJet API FULL/url"
+# View credential details
+op item get "BlueJet API FULL" --vault "Missive | BJ"
+
+# Verify fields exist
+op read "op://Missive | BJ/BlueJet API FULL/username"
+op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_API_TOKEN_ID"
 ```
 
 ### Error: "Failed to connect to Qdrant"
