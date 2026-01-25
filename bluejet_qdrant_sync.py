@@ -52,19 +52,22 @@ class BlueJetAPI:
 
     def __init__(self):
         # Load credentials from environment
-        self.base_url = os.getenv('BLUEJET_URL', 'https://czeco.bluejet.cz')
-        self.username = os.getenv('BLUEJET_USERNAME')
-        self.token_id = os.getenv('BLUEJET_TOKEN_ID')
-        self.token_hash = os.getenv('BLUEJET_TOKEN_HASH')
+        self.base_url = os.getenv('BLUEJET_BASE_URL', 'https://czeco.bluejet.cz')
+        self.auth_url = os.getenv('BLUEJET_REST_AUTH_URL', f'{self.base_url}/api/v1/users/authenticate')
+        self.data_url = os.getenv('BLUEJET_REST_DATA_URL', f'{self.base_url}/api/v1/data')
+        self.username = os.getenv('BLUEJET_USERNAME', 'svejkovsky')
+        self.token_id = os.getenv('BLUEJET_API_TOKEN_ID')
+        self.token_hash = os.getenv('BLUEJET_API_TOKEN_HASH')
+        self.environment = os.getenv('BLUEJET_API_ENVIRONMENT', 'production')
 
         if not all([self.token_id, self.token_hash]):
             raise ValueError(
-                "Missing BlueJet credentials. Set BLUEJET_TOKEN_ID, BLUEJET_TOKEN_HASH"
+                "Missing BlueJet credentials. Set BLUEJET_API_TOKEN_ID, BLUEJET_API_TOKEN_HASH"
             )
 
         self.api_base = f"{self.base_url}/api/v1"
         self.auth_token = None
-        logger.info(f"BlueJet API initialized for {self.base_url} (user: {self.username})")
+        logger.info(f"BlueJet API initialized: {self.base_url} (user: {self.username}, env: {self.environment})")
 
     def authenticate(self) -> bool:
         """Authenticate with BlueJet API"""
@@ -77,7 +80,7 @@ class BlueJetAPI:
 </user>"""
 
             response = requests.post(
-                f"{self.api_base}/users/authenticate",
+                self.auth_url,
                 data=auth_xml,
                 headers={'Content-Type': 'application/xml'}
             )
