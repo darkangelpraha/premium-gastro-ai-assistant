@@ -18,10 +18,10 @@ chmod +x setup-bluejet-sync.sh
 ./setup-bluejet-sync.sh
 ```
 
-This will retrieve credentials from your 1Password AI vault:
-- `op://AI/BlueJet API/url`
-- `op://AI/BlueJet API/tokenID`
-- `op://AI/BlueJet API/tokenHash`
+This will retrieve credentials from your 1Password "Missive | BJ" vault:
+- `op://Missive | BJ/BlueJet API FULL/url`
+- `op://Missive | BJ/BlueJet API FULL/tokenID`
+- `op://Missive | BJ/BlueJet API FULL/tokenHash`
 
 ### Step 3: First Sync (Manual)
 ```bash
@@ -64,12 +64,12 @@ Uploaded batch: 100/40123 products
 
 1. **Find your BlueJet credentials in 1Password:**
    ```bash
-   op item list --vault AI | grep -i bluejet
+   op item list --vault "Missive | BJ" | grep -i bluejet
    ```
 
 2. **Check credential structure:**
    ```bash
-   op item get "BlueJet API" --vault AI
+   op item get "BlueJet API FULL" --vault "Missive | BJ"
    ```
 
 3. **Update paths in `setup-bluejet-sync.sh`** if needed
@@ -87,9 +87,9 @@ Uploaded batch: 100/40123 products
 2. **Add to 1Password:**
    ```bash
    op item create \
-     --vault AI \
+     --vault "Missive | BJ" \
      --category "API Credential" \
-     --title "BlueJet API" \
+     --title "BlueJet API FULL" \
      url="https://your-instance.bluejet.cz" \
      tokenID="your_token_id" \
      tokenHash="your_token_hash"
@@ -186,10 +186,10 @@ curl -X POST http://localhost:8080/query -d '{
 ### Error: "Missing BlueJet credentials"
 ```bash
 # Check 1Password vault
-op item list --vault AI
+op item list --vault "Missive | BJ"
 
 # Verify paths
-op read "op://AI/BlueJet API/url"
+op read "op://Missive | BJ/BlueJet API FULL/url"
 ```
 
 ### Error: "Failed to connect to Qdrant"
