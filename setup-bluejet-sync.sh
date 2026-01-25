@@ -20,16 +20,16 @@ cat > .env.bluejet << EOF
 # DO NOT commit this file to git!
 
 # BlueJet CRM API
-BLUEJET_URL=$(op read "op://AI/BlueJet API/url" 2>/dev/null || echo "https://your-instance.bluejet.cz")
-BLUEJET_TOKEN_ID=$(op read "op://AI/BlueJet API/tokenID" 2>/dev/null || echo "MISSING")
-BLUEJET_TOKEN_HASH=$(op read "op://AI/BlueJet API/tokenHash" 2>/dev/null || echo "MISSING")
+BLUEJET_URL=$(op read "op://Missive | BJ/BlueJet API FULL/url" 2>/dev/null || echo "https://your-instance.bluejet.cz")
+BLUEJET_TOKEN_ID=$(op read "op://Missive | BJ/BlueJet API FULL/tokenID" 2>/dev/null || echo "MISSING")
+BLUEJET_TOKEN_HASH=$(op read "op://Missive | BJ/BlueJet API FULL/tokenHash" 2>/dev/null || echo "MISSING")
 
 # Qdrant Vector Database
 QDRANT_HOST=192.168.1.129
 QDRANT_PORT=6333
 
 # OpenAI for embeddings (optional)
-OPENAI_API_KEY=$(op read "op://AI/OpenAI API/credential" 2>/dev/null || echo "")
+OPENAI_API_KEY=$(op read "op://AI Vault/OpenAI API/credential" 2>/dev/null || echo "")
 EOF
 
 echo "✅ Created .env.bluejet"
@@ -39,10 +39,10 @@ echo ""
 if grep -q "MISSING" .env.bluejet; then
     echo "⚠️  WARNING: Some credentials are missing from 1Password"
     echo ""
-    echo "Expected paths in 1Password AI vault:"
-    echo "  - op://AI/BlueJet API/url"
-    echo "  - op://AI/BlueJet API/tokenID"
-    echo "  - op://AI/BlueJet API/tokenHash"
+    echo "Expected paths in 1Password 'Missive | BJ' vault:"
+    echo "  - op://Missive | BJ/BlueJet API FULL/url"
+    echo "  - op://Missive | BJ/BlueJet API FULL/tokenID"
+    echo "  - op://Missive | BJ/BlueJet API FULL/tokenHash"
     echo ""
     echo "Please check your 1Password vault and update the paths above if needed."
     echo ""
