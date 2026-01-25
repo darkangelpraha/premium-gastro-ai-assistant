@@ -52,18 +52,19 @@ class BlueJetAPI:
 
     def __init__(self):
         # Load credentials from environment
-        self.base_url = os.getenv('BLUEJET_URL')
+        self.base_url = os.getenv('BLUEJET_URL', 'https://czeco.bluejet.cz')
+        self.username = os.getenv('BLUEJET_USERNAME')
         self.token_id = os.getenv('BLUEJET_TOKEN_ID')
         self.token_hash = os.getenv('BLUEJET_TOKEN_HASH')
 
-        if not all([self.base_url, self.token_id, self.token_hash]):
+        if not all([self.token_id, self.token_hash]):
             raise ValueError(
-                "Missing BlueJet credentials. Set BLUEJET_URL, BLUEJET_TOKEN_ID, BLUEJET_TOKEN_HASH"
+                "Missing BlueJet credentials. Set BLUEJET_TOKEN_ID, BLUEJET_TOKEN_HASH"
             )
 
         self.api_base = f"{self.base_url}/api/v1"
         self.auth_token = None
-        logger.info(f"BlueJet API initialized for {self.base_url}")
+        logger.info(f"BlueJet API initialized for {self.base_url} (user: {self.username})")
 
     def authenticate(self) -> bool:
         """Authenticate with BlueJet API"""
