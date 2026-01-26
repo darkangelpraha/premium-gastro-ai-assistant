@@ -23,24 +23,24 @@ cat > .env.bluejet << EOF
 # DO NOT commit this file to git!
 
 # BlueJet CRM API Authentication
-BLUEJET_USERNAME=$(op read "op://$VAULT_ID/BlueJet API FULL/username" 2>/dev/null || echo "svejkovsky")
-BLUEJET_API_TOKEN_ID=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_TOKEN_ID" 2>/dev/null || echo "MISSING")
-BLUEJET_API_TOKEN_HASH=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_TOKEN_HASH" 2>/dev/null || echo "MISSING")
+BLUEJET_USERNAME="$(op read "op://$VAULT_ID/BlueJet API FULL/username" 2>/dev/null || echo "svejkovsky")"
+BLUEJET_API_TOKEN_ID="$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_TOKEN_ID" 2>/dev/null || echo "MISSING")"
+BLUEJET_API_TOKEN_HASH="$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_TOKEN_HASH" 2>/dev/null || echo "MISSING")"
 
 # BlueJet API Endpoints (from 1Password)
-BLUEJET_BASE_URL=$(op read "op://$VAULT_ID/BlueJet API FULL/w4wjna5zoxuysfdsfdxsyrasmu" 2>/dev/null || echo "https://czeco.bluejet.cz")
-BLUEJET_REST_AUTH_URL=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_REST_AUTH_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/users/authenticate")
-BLUEJET_REST_DATA_URL=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_REST_DATA_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/data")
+BLUEJET_BASE_URL="$(op read "op://$VAULT_ID/BlueJet API FULL/w4wjna5zoxuysfdsfdxsyrasmu" 2>/dev/null || echo "https://czeco.bluejet.cz")"
+BLUEJET_REST_AUTH_URL="$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_REST_AUTH_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/users/authenticate")"
+BLUEJET_REST_DATA_URL="$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_REST_DATA_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/data")"
 
 # API Environment
-BLUEJET_API_ENVIRONMENT=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_ENVIRONMENT" 2>/dev/null || echo "production")
+BLUEJET_API_ENVIRONMENT="$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_ENVIRONMENT" 2>/dev/null || echo "production")"
 
 # Qdrant Vector Database
 QDRANT_HOST=192.168.1.129
 QDRANT_PORT=6333
 
 # OpenAI for embeddings (optional)
-OPENAI_API_KEY=$(op read "op://AI Vault/OpenAI API/credential" 2>/dev/null || echo "")
+OPENAI_API_KEY="$(op read "op://AI Vault/OpenAI API/credential" 2>/dev/null || echo "")"
 EOF
 
 echo "✅ Created .env.bluejet"
