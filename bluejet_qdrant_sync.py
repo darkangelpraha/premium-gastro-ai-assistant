@@ -15,6 +15,7 @@ import os
 import sys
 import requests
 import json
+import subprocess
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import logging
@@ -22,13 +23,34 @@ from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from dotenv import load_dotenv
 
-# Load environment variables from .env.bluejet if it exists
-if os.path.exists('.env.bluejet'):
-    load_dotenv('.env.bluejet')
-elif os.path.exists('.env'):
-    load_dotenv('.env')
+
+def read_from_1password(reference: str, default: str = None) -> Optional[str]:
+    """Read credential from 1Password using op CLI"""
+    try:
+        result = subprocess.run(
+            ['op', 'read', reference],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        value = result.stdout.strip()
+        # Remove trailing newlines that 1Password sometimes adds
+        return value.rstrip('\n')
+    except subprocess.CalledProcessError:
+        if default is not None:
+            return default
+        logger.warning(f"Could not read from 1Password: {reference}")
+        return None
+    except FileNotFoundError:
+        logger.error("1Password CLI (op) not found. Install: brew install 1password-cli")
+        if default is not None:
+            return default
+        return None
+
+
+# 1Password vault ID (pipe character | in vault name breaks op read)
+VAULT_ID = "5zbrmieoqrroxon4eu6mwfu4li"
 
 # Setup logging
 logging.basicConfig(
@@ -58,18 +80,19 @@ class BlueJetAPI:
     """BlueJet CRM API Client"""
 
     def __init__(self):
-        # Load credentials from environment
-        self.base_url = os.getenv('BLUEJET_BASE_URL', 'https://czeco.bluejet.cz')
-        self.auth_url = os.getenv('BLUEJET_REST_AUTH_URL', f'{self.base_url}/api/v1/users/authenticate')
-        self.data_url = os.getenv('BLUEJET_REST_DATA_URL', f'{self.base_url}/api/v1/data')
-        self.username = os.getenv('BLUEJET_USERNAME', 'svejkovsky')
-        self.token_id = os.getenv('BLUEJET_API_TOKEN_ID')
-        self.token_hash = os.getenv('BLUEJET_API_TOKEN_HASH')
-        self.environment = os.getenv('BLUEJET_API_ENVIRONMENT', 'production')
+        # Load credentials directly from 1Password
+        logger.info("Loading credentials from 1Password...")
+        self.username = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/username", "svejkovsky")
+        self.token_id = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/BLUEJET_API_TOKEN_ID")
+        self.token_hash = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/BLUEJET_API_TOKEN_HASH")
+        self.base_url = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/w4wjna5zoxuysfdsfdxsyrasmu", "https://czeco.bluejet.cz")
+        self.auth_url = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/BLUEJET_REST_AUTH_URL", f'{self.base_url}/api/v1/users/authenticate')
+        self.data_url = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/BLUEJET_REST_DATA_URL", f'{self.base_url}/api/v1/data')
+        self.environment = read_from_1password(f"op://{VAULT_ID}/BlueJet API FULL/BLUEJET_API_ENVIRONMENT", "production")
 
         if not all([self.token_id, self.token_hash]):
             raise ValueError(
-                "Missing BlueJet credentials. Set BLUEJET_API_TOKEN_ID, BLUEJET_API_TOKEN_HASH"
+                "Missing BlueJet credentials from 1Password. Check vault 'Missive | BJ' → 'BlueJet API FULL'"
             )
 
         self.api_base = f"{self.base_url}/api/v1"
