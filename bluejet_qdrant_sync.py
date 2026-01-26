@@ -22,6 +22,13 @@ from dataclasses import dataclass
 import xml.etree.ElementTree as ET
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
+from dotenv import load_dotenv
+
+# Load environment variables from .env.bluejet if it exists
+if os.path.exists('.env.bluejet'):
+    load_dotenv('.env.bluejet')
+elif os.path.exists('.env'):
+    load_dotenv('.env')
 
 # Setup logging
 logging.basicConfig(
