@@ -15,22 +15,25 @@ if ! command -v op &> /dev/null; then
 fi
 
 # Create .env file from 1Password
+# Using vault ID instead of name (pipe character | breaks op read)
+VAULT_ID="5zbrmieoqrroxon4eu6mwfu4li"
+
 cat > .env.bluejet << EOF
 # Auto-generated from 1Password - $(date)
 # DO NOT commit this file to git!
 
 # BlueJet CRM API Authentication
-BLUEJET_USERNAME=$(op read "op://Missive | BJ/BlueJet API FULL/username" 2>/dev/null || echo "svejkovsky")
-BLUEJET_API_TOKEN_ID=$(op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_API_TOKEN_ID" 2>/dev/null || echo "MISSING")
-BLUEJET_API_TOKEN_HASH=$(op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_API_TOKEN_HASH" 2>/dev/null || echo "MISSING")
+BLUEJET_USERNAME=$(op read "op://$VAULT_ID/BlueJet API FULL/username" 2>/dev/null || echo "svejkovsky")
+BLUEJET_API_TOKEN_ID=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_TOKEN_ID" 2>/dev/null || echo "MISSING")
+BLUEJET_API_TOKEN_HASH=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_TOKEN_HASH" 2>/dev/null || echo "MISSING")
 
 # BlueJet API Endpoints (from 1Password)
-BLUEJET_BASE_URL=$(op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_BASE_URL" 2>/dev/null || echo "https://czeco.bluejet.cz")
-BLUEJET_REST_AUTH_URL=$(op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_REST_AUTH_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/users/authenticate")
-BLUEJET_REST_DATA_URL=$(op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_REST_DATA_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/data")
+BLUEJET_BASE_URL=$(op read "op://$VAULT_ID/BlueJet API FULL/w4wjna5zoxuysfdsfdxsyrasmu" 2>/dev/null || echo "https://czeco.bluejet.cz")
+BLUEJET_REST_AUTH_URL=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_REST_AUTH_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/users/authenticate")
+BLUEJET_REST_DATA_URL=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_REST_DATA_URL" 2>/dev/null || echo "https://czeco.bluejet.cz/api/v1/data")
 
 # API Environment
-BLUEJET_API_ENVIRONMENT=$(op read "op://Missive | BJ/BlueJet API FULL/BLUEJET_API_ENVIRONMENT" 2>/dev/null || echo "production")
+BLUEJET_API_ENVIRONMENT=$(op read "op://$VAULT_ID/BlueJet API FULL/BLUEJET_API_ENVIRONMENT" 2>/dev/null || echo "production")
 
 # Qdrant Vector Database
 QDRANT_HOST=192.168.1.129
