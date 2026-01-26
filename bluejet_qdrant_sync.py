@@ -34,9 +34,9 @@ def read_from_1password(reference: str, default: str = None) -> Optional[str]:
             text=True,
             check=True
         )
+        # Strip all leading/trailing whitespace including newlines
         value = result.stdout.strip()
-        # Remove trailing newlines that 1Password sometimes adds
-        return value.rstrip('\n')
+        return value if value else default
     except subprocess.CalledProcessError:
         if default is not None:
             return default
@@ -109,18 +109,31 @@ class BlueJetAPI:
     <tokenHash>{self.token_hash}</tokenHash>
 </user>"""
 
+            logger.info(f"Authenticating to: {self.auth_url}")
+            logger.info(f"TokenID length: {len(self.token_id)}, TokenHash length: {len(self.token_hash)}")
+
             response = requests.post(
                 self.auth_url,
-                data=auth_xml,
-                headers={'Content-Type': 'application/xml'}
+                data=auth_xml.encode('utf-8'),
+                headers={
+                    'Content-Type': 'application/xml; charset=utf-8',
+                }
             )
+
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response body: {response.text}")
 
             if response.status_code == 200:
                 # Parse token from response
                 root = ET.fromstring(response.text)
-                self.auth_token = root.find('token').text
-                logger.info("✅ BlueJet authentication successful")
-                return True
+                token_element = root.find('.//token')
+                if token_element is not None and token_element.text:
+                    self.auth_token = token_element.text
+                    logger.info("✅ BlueJet authentication successful")
+                    return True
+                else:
+                    logger.error("❌ No token found in response")
+                    return False
             else:
                 logger.error(f"❌ Authentication failed: {response.status_code} - {response.text}")
                 return False
