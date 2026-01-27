@@ -81,7 +81,7 @@ class QdrantFullSync:
         return embedding[:1536]
 
     def sync_entity(self, bluejet: BlueJetAPI, entity_key: str, entity_config: dict) -> int:
-        """Sync specific entity type"""
+        """Sync specific entity type with 100% verification"""
         logger.info("=" * 60)
         logger.info(f"📥 Syncing {entity_config['description']}")
         logger.info("=" * 60)
@@ -89,16 +89,26 @@ class QdrantFullSync:
         collection_name = f"bluejet_{entity_key}"
         object_no = entity_config['no']
 
+        # Get BlueJet total count for verification
+        logger.info(f"🔍 Getting total count from BlueJet (object {object_no})...")
+        bluejet_total = bluejet.get_total_count(object_no=object_no)
+        if bluejet_total > 0:
+            logger.info(f"📊 BlueJet has {bluejet_total:,} total {entity_key}")
+        else:
+            logger.warning(f"⚠️ Could not determine BlueJet total count for {entity_key}")
+
         # Create collection
         try:
             collection_info = self.client.get_collection(collection_name)
             logger.info(f"Collection exists: {collection_info.points_count} points")
+            initial_qdrant_count = collection_info.points_count
         except:
             self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=VectorParams(size=1536, distance=Distance.COSINE)
             )
             logger.info(f"✅ Created collection: {collection_name}")
+            initial_qdrant_count = 0
 
         # Streaming sync
         offset = 0
@@ -109,8 +119,8 @@ class QdrantFullSync:
         while True:
             logger.info(f"📥 Fetching batch at offset {offset}...")
 
-            # Fetch from BlueJet
-            items = bluejet.fetch_products(limit=batch_size, offset=offset)
+            # Fetch from BlueJet using generic fetch_data method
+            items = bluejet.fetch_data(object_no=object_no, limit=batch_size, offset=offset)
 
             if not items:
                 consecutive_failures += 1
@@ -125,11 +135,13 @@ class QdrantFullSync:
             points = []
             for item in items:
                 try:
-                    # Create searchable text from all fields
+                    # Create searchable text from ALL fields (raw_data)
                     searchable_parts = []
-                    for value in item.values():
-                        if isinstance(value, str) and value:
-                            searchable_parts.append(value)
+                    raw_data = item.get('raw_data', {})
+
+                    for field_name, field_value in raw_data.items():
+                        if field_value and isinstance(field_value, str) and field_value.strip():
+                            searchable_parts.append(field_value)
 
                     searchable_text = " ".join(searchable_parts)
                     embedding = self.generate_embedding(searchable_text)
@@ -138,7 +150,8 @@ class QdrantFullSync:
                         id=hash(item['id']),  # Use hash of ID as numeric ID
                         vector=embedding,
                         payload={
-                            **item,
+                            'id': item['id'],
+                            'raw_data': raw_data,  # Store ALL original BlueJet data
                             'entity_type': entity_key,
                             'searchable_text': searchable_text,
                             'synced_at': datetime.now().isoformat()
@@ -163,6 +176,73 @@ class QdrantFullSync:
 
             offset += batch_size
             time.sleep(2.0)
+
+        # CRITICAL VERIFICATION: BlueJet count must match Qdrant count
+        logger.info("🔍 Verifying counts...")
+        try:
+            collection_info = self.client.get_collection(collection_name)
+            qdrant_count = collection_info.points_count
+
+            logger.info(f"📊 BlueJet: {bluejet_total:,} | Qdrant: {qdrant_count:,}")
+
+            if bluejet_total > 0 and qdrant_count != bluejet_total:
+                missing = bluejet_total - qdrant_count
+                logger.error(f"❌ MISMATCH: {missing:,} items missing from Qdrant!")
+                logger.error(f"⚠️  Running verification pass to ensure 100% copy...")
+
+                # Run verification pass
+                verification_offset = 0
+                while verification_offset < bluejet_total:
+                    items = bluejet.fetch_data(object_no=object_no, limit=batch_size, offset=verification_offset)
+                    if not items:
+                        break
+
+                    # Convert and upload
+                    points = []
+                    for item in items:
+                        try:
+                            raw_data = item.get('raw_data', {})
+                            searchable_parts = [str(v) for v in raw_data.values() if v and isinstance(v, str)]
+                            searchable_text = " ".join(searchable_parts)
+                            embedding = self.generate_embedding(searchable_text)
+
+                            point = PointStruct(
+                                id=hash(item['id']),
+                                vector=embedding,
+                                payload={
+                                    'id': item['id'],
+                                    'raw_data': raw_data,
+                                    'entity_type': entity_key,
+                                    'searchable_text': searchable_text,
+                                    'synced_at': datetime.now().isoformat()
+                                }
+                            )
+                            points.append(point)
+                        except Exception as e:
+                            logger.warning(f"⚠️ Error processing item: {e}")
+
+                    if points:
+                        self.client.upsert(collection_name=collection_name, points=points)
+
+                    verification_offset += batch_size
+                    time.sleep(2.0)
+
+                # Final count check
+                collection_info = self.client.get_collection(collection_name)
+                final_count = collection_info.points_count
+
+                if final_count == bluejet_total:
+                    logger.info(f"✅ COUNTS MATCH: {final_count:,} items (100% copy)")
+                else:
+                    logger.error(f"⚠️ STILL MISSING: {bluejet_total - final_count:,} items")
+
+                return final_count
+
+            elif bluejet_total > 0 and qdrant_count == bluejet_total:
+                logger.info(f"✅ COUNTS MATCH: {qdrant_count:,} items (100% copy)")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Could not verify count: {e}")
 
         logger.info(f"✅ {entity_config['description']}: {total_synced} items synced")
         return total_synced

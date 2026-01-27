@@ -173,6 +173,149 @@ class BlueJetAPI:
             logger.error(f"❌ Authentication error: {e}")
             return False
 
+    def get_total_count(self, object_no: int = 217) -> int:
+        """Get total count of records from BlueJet for given object number"""
+        # Check token validity and re-authenticate if expired
+        if not self.auth_token or (self.token_expiry and datetime.now() >= self.token_expiry):
+            logger.info("Token expired or missing, re-authenticating...")
+            if not self.authenticate():
+                return 0
+
+        try:
+            # Fetch just 1 record to get total count from header
+            response = requests.get(
+                f"{self.api_base}/data",
+                params={
+                    'no': object_no,
+                    'offset': 0,
+                    'limit': 1,
+                    'fields': 'ID'  # Minimal fields for count
+                },
+                headers={
+                    'X-Token': self.auth_token,
+                    'Accept': 'application/json'
+                }
+            )
+
+            if response.status_code == 200:
+                # Try to get total count from response
+                data = response.json()
+                total_count = data.get('total', 0)
+
+                # Also try header
+                if not total_count:
+                    total_count = response.headers.get('X-Total-Count', 0)
+
+                # Try to parse from data structure
+                if not total_count and 'rows' in data:
+                    # If header doesn't have count, we need to estimate
+                    # by checking last page
+                    logger.warning("⚠️ Total count not available in response, will sync all data")
+                    return 0
+
+                return int(total_count) if total_count else 0
+            else:
+                logger.error(f"❌ Failed to get total count: HTTP {response.status_code}")
+                return 0
+
+        except Exception as e:
+            logger.error(f"❌ Error getting total count: {e}")
+            return 0
+
+    def fetch_data(self, object_no: int, limit: int = 200, offset: int = 0, retry_count: int = 0) -> List[Dict]:
+        """Fetch data from BlueJet REST API for any object type with proper DataSet parsing"""
+        # Check token validity and re-authenticate if expired
+        if not self.auth_token or (self.token_expiry and datetime.now() >= self.token_expiry):
+            logger.info("Token expired or missing, re-authenticating...")
+            if not self.authenticate():
+                return []
+
+        try:
+            # Fetch data using BlueJet REST API
+            response = requests.get(
+                f"{self.api_base}/data",
+                params={
+                    'no': object_no,  # Required: Object number
+                    'offset': offset,
+                    'limit': min(limit, 200),  # Max 200 per API docs
+                    'fields': 'all'  # Get all columns
+                },
+                headers={
+                    'X-Token': self.auth_token,
+                    'Accept': 'application/json'
+                }
+            )
+
+            # Handle authentication failure (token expired)
+            if response.status_code == 401 and retry_count < 1:
+                logger.warning("⚠️ Token expired (401), re-authenticating...")
+                self.auth_token = None  # Force re-auth
+                if self.authenticate():
+                    return self.fetch_data(object_no, limit, offset, retry_count + 1)
+                else:
+                    logger.error("❌ Re-authentication failed")
+                    return []
+
+            # Handle rate limiting (429 Too Many Requests)
+            if response.status_code == 429 and retry_count < 3:
+                retry_after = int(response.headers.get('Retry-After', 5))
+                logger.warning(f"⚠️ Rate limited. Waiting {retry_after} seconds...")
+                time.sleep(retry_after)
+                return self.fetch_data(object_no, limit, offset, retry_count + 1)
+
+            # Handle HTTPS requirement (400 BadRequest)
+            if response.status_code == 400:
+                logger.error(f"❌ 400 BadRequest: {response.text}")
+                logger.error("BlueJet API requires HTTPS protocol")
+                return []
+
+            if response.status_code == 200:
+                # Parse DataSet response structure
+                data = response.json()
+                items = []
+
+                # Parse rows array
+                rows = data.get('rows', [])
+
+                for row in rows:
+                    # Each row has columns array with name/value pairs
+                    columns = row.get('columns', [])
+
+                    # Convert columns array to dict
+                    item_data = {}
+                    for col in columns:
+                        col_name = col.get('name', '')
+                        col_value = col.get('value', '')
+                        item_data[col_name] = col_value
+
+                    # Store with ID and all raw data
+                    item = {
+                        'id': str(item_data.get('ID', item_data.get('id', ''))),
+                        'raw_data': item_data
+                    }
+
+                    # Only add if has valid ID
+                    if item['id']:
+                        items.append(item)
+
+                logger.info(f"✅ Fetched {len(items)} items from BlueJet (object {object_no}, offset {offset})")
+                return items
+            else:
+                logger.error(f"❌ Failed to fetch data: HTTP {response.status_code}")
+                logger.error(f"Request URL: {response.url}")
+                logger.error(f"Response: {response.text[:1000]}")
+                return []
+
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to parse JSON response: {e}")
+            logger.error(f"Raw response: {response.text[:1000]}")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Error fetching data: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+
     def fetch_products(self, limit: int = 200, offset: int = 0, retry_count: int = 0) -> List[Dict]:
         """Fetch products from BlueJet REST API with proper DataSet parsing"""
         # Check token validity and re-authenticate if expired
@@ -427,19 +570,28 @@ class QdrantSync:
         points = []
         for product in products:
             try:
-                # Create searchable text
-                searchable_text = f"""
-                {product['name']}
-                {product['code']}
-                {product['description']}
-                {product['category']}
-                {product['supplier']}
-                """.strip()
+                # Create searchable text from ALL fields (including raw_data)
+                searchable_parts = []
 
-                # Generate embedding
+                # Add mapped fields
+                for key in ['name', 'code', 'description', 'category', 'supplier',
+                           'availability', 'unit', 'currency']:
+                    value = product.get(key, '')
+                    if value and isinstance(value, str):
+                        searchable_parts.append(value)
+
+                # Add ALL raw_data fields for complete vector coverage
+                raw_data = product.get('raw_data', {})
+                for field_name, field_value in raw_data.items():
+                    if field_value and isinstance(field_value, str) and field_value.strip():
+                        searchable_parts.append(field_value)
+
+                searchable_text = " ".join(searchable_parts)
+
+                # Generate embedding from ALL data
                 embedding = self.generate_embedding(searchable_text)
 
-                # Create point
+                # Create point with ALL data preserved
                 point = PointStruct(
                     id=product['id'],
                     vector=embedding,
@@ -453,6 +605,7 @@ class QdrantSync:
                         'currency': product['currency'],
                         'availability': product['availability'],
                         'unit': product['unit'],
+                        'raw_data': raw_data,  # CRITICAL: Store ALL original BlueJet data
                         'searchable_text': searchable_text,
                         'last_updated': datetime.now().isoformat(),
                     }
@@ -534,6 +687,14 @@ def main():
         # Create collection first
         qdrant.create_collection_if_not_exists()
 
+        # Get initial BlueJet total count for verification
+        logger.info("🔍 Getting total product count from BlueJet...")
+        bluejet_total = bluejet.get_total_count(object_no=217)
+        if bluejet_total > 0:
+            logger.info(f"📊 BlueJet has {bluejet_total:,} total products")
+        else:
+            logger.warning("⚠️ Could not determine BlueJet total count, will sync all available data")
+
         # STREAMING SYNC: Fetch batch → Upload batch → Repeat
         logger.info("📥 Starting streaming sync (fetch + upload per batch)...")
         logger.info("⏱️  Expected sync time for 109k products: ~40-60 minutes")
@@ -582,6 +743,75 @@ def main():
         # Calculate elapsed time
         elapsed_seconds = time_module.time() - sync_start_time
         elapsed_minutes = elapsed_seconds / 60
+
+        # CRITICAL VERIFICATION: BlueJet count must match Qdrant count
+        logger.info("=" * 60)
+        logger.info("🔍 VERIFICATION: Comparing BlueJet vs Qdrant counts...")
+        logger.info("=" * 60)
+
+        # Get final Qdrant count
+        try:
+            collection_info = qdrant.client.get_collection(qdrant.collection_name)
+            qdrant_count = collection_info.points_count
+            logger.info(f"📊 BlueJet total: {bluejet_total:,} products")
+            logger.info(f"📊 Qdrant total: {qdrant_count:,} products")
+
+            if bluejet_total > 0 and qdrant_count != bluejet_total:
+                missing = bluejet_total - qdrant_count
+                logger.error("=" * 60)
+                logger.error(f"❌ MISMATCH DETECTED: {missing:,} products missing!")
+                logger.error("=" * 60)
+                logger.error(f"   BlueJet: {bluejet_total:,} products")
+                logger.error(f"   Qdrant:  {qdrant_count:,} products")
+                logger.error(f"   Missing: {missing:,} products ({missing*100/bluejet_total:.1f}%)")
+                logger.error("=" * 60)
+                logger.error("⚠️  Running UPDATE to ensure 100% copy...")
+
+                # Run verification pass to sync missing products
+                verification_offset = 0
+                verification_uploaded = 0
+
+                while verification_offset < bluejet_total:
+                    logger.info(f"🔄 Verification pass at offset {verification_offset}...")
+                    products = bluejet.fetch_products(limit=batch_size, offset=verification_offset)
+
+                    if not products:
+                        break
+
+                    # Upload to Qdrant (upsert will update existing, add missing)
+                    uploaded = qdrant.sync_products(products)
+                    verification_uploaded += uploaded
+
+                    verification_offset += batch_size
+                    time.sleep(2.0)
+
+                # Final count after verification
+                collection_info = qdrant.client.get_collection(qdrant.collection_name)
+                final_count = collection_info.points_count
+
+                logger.info("=" * 60)
+                logger.info(f"✅ VERIFICATION COMPLETE")
+                logger.info(f"   Products added in verification: {verification_uploaded}")
+                logger.info(f"   Final Qdrant count: {final_count:,}")
+
+                if final_count == bluejet_total:
+                    logger.info(f"✅ COUNTS MATCH: 100% copy achieved!")
+                else:
+                    logger.error(f"⚠️  STILL MISSING: {bluejet_total - final_count:,} products")
+
+                logger.info("=" * 60)
+
+            elif bluejet_total > 0 and qdrant_count == bluejet_total:
+                logger.info("=" * 60)
+                logger.info(f"✅ COUNTS MATCH: 100% copy confirmed!")
+                logger.info(f"   BlueJet: {bluejet_total:,} products")
+                logger.info(f"   Qdrant:  {qdrant_count:,} products")
+                logger.info("=" * 60)
+            else:
+                logger.info(f"✅ Sync complete: {qdrant_count:,} products in Qdrant")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Could not verify final count: {e}")
 
         logger.info("=" * 60)
         logger.info(f"✅ SYNC COMPLETE")
