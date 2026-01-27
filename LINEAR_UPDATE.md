@@ -35,9 +35,11 @@ Production-ready BlueJet → Qdrant product sync service with full batch verific
 - All prerequisites automated (Python, Qdrant, 1Password)
 
 ### Files Changed
-1. `bluejet_qdrant_sync.py` - Core sync logic with verification
+1. `bluejet_qdrant_sync.py` - Core sync with complete API compliance
 2. `TEST_BLUEJET_SYNC.sh` - Mac-compatible test script
 3. `RUN_BLUEJET_SYNC.sh` - Full sync runner
+4. `load_bluejet_docs_to_qdrant.py` - Load API docs for semantic search
+5. `test_bluejet_auth.sh` - Debug authentication script
 
 ### Testing Status
 - ✅ Qdrant connection verified (192.168.1.129:6333)
@@ -68,8 +70,20 @@ max_consecutive_failures = 3  # Stop after 3 empty batches
 
 ### Discovery Process
 **Initial attempts**: Tried XML format with various tag capitalization (`<user>`, `<User>`, with/without xmlns)
-**Breakthrough**: Read official BlueJet API documentation - REST API uses JSON exclusively
-**Lesson learned**: Always verify API format (JSON vs XML) before implementation
+**Breakthrough**: Read official BlueJet API documentation completely - REST API uses JSON exclusively
+**Critical fix 2**: Added required `no=217` parameter for products + DataSet parsing
+**Comprehensive review**: Read ENTIRE API documentation to fix ALL error points
+
+### Complete API Compliance (Non-Negotiable)
+✅ **HTTPS enforcement** - Validates protocol, clear errors for HTTP
+✅ **Token management** - 24-hour expiry tracking, auto re-auth on 401
+✅ **Error handling** - 400/401/403/429 with specific retry logic
+✅ **DataSet parsing** - rows[].columns[] structure with name/value pairs
+✅ **Field mapping** - Czech/English/lowercase variants (4-5 fallbacks per field)
+✅ **Raw data storage** - Preserve all unmapped fields
+✅ **Comprehensive logging** - URLs, headers, bodies, traces on errors
+✅ **API limits** - Max 200 records per request, proper pagination
+✅ **Documentation in Qdrant** - Semantic search for API troubleshooting
 
 ### Next Steps
 1. User runs `./TEST_BLUEJET_SYNC.sh` to verify authentication with JSON format
@@ -79,11 +93,11 @@ max_consecutive_failures = 3  # Stop after 3 empty batches
 
 ### Commits (Latest 5)
 ```
-9dd3dab Fix BlueJet API - use JSON not XML for REST API (CRITICAL FIX)
-6af0995 Add BlueJet auth debugging script
-ebcc51d Add Linear update summary
-29e33f8 Add batch verification and confirmation for robust sync
-95f0e5c Add rate limiting and smooth sync operation
+a2b3bc7 Add script to load BlueJet API docs into Qdrant for semantic search
+93d11f1 Add comprehensive error handling and validation per API docs
+de7e2ff Fix BlueJet data API - add required no=217 parameter and DataSet parsing
+9dd3dab Fix BlueJet API - use JSON not XML for REST API
+7319257 Update Linear - critical fix: BlueJet uses JSON not XML
 ```
 
 ### GitHub Branch
