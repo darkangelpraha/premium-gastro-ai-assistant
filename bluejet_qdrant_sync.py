@@ -96,8 +96,14 @@ class BlueJetAPI:
                 "Missing BlueJet credentials from 1Password. Check vault 'Missive | BJ' → 'BlueJet API FULL'"
             )
 
+        # CRITICAL: BlueJet API requires HTTPS (returns 400 on HTTP)
+        if not self.base_url.startswith('https://'):
+            logger.error(f"❌ BlueJet API requires HTTPS protocol. Got: {self.base_url}")
+            raise ValueError("BlueJet API requires HTTPS. Update base URL to use https://")
+
         self.api_base = f"{self.base_url}/api/v1"
         self.auth_token = None
+        self.token_expiry = None  # Track when token expires (24 hours from auth)
         logger.info(f"BlueJet API initialized: {self.base_url} (user: {self.username}, env: {self.environment})")
 
     def authenticate(self) -> bool:
@@ -130,12 +136,27 @@ class BlueJetAPI:
                 result = response.json()
                 if result.get('succeeded') and result.get('token'):
                     self.auth_token = result['token']
+                    # Token valid for 24 hours per API docs
+                    from datetime import timedelta
+                    self.token_expiry = datetime.now() + timedelta(hours=24)
                     logger.info("✅ BlueJet authentication successful")
-                    logger.info(f"Token valid for 24 hours: {self.auth_token[:10]}...")
+                    logger.info(f"Token valid until: {self.token_expiry.strftime('%Y-%m-%d %H:%M:%S')}")
+                    logger.info(f"Token: {self.auth_token[:10]}...")
                     return True
                 else:
                     logger.error(f"❌ Authentication failed: {result.get('message', 'Unknown error')}")
                     return False
+            elif response.status_code == 400:
+                # 400 BadRequest - likely HTTP instead of HTTPS
+                logger.error(f"❌ Authentication failed: 400 BadRequest")
+                logger.error(f"Response: {response.text}")
+                logger.error("BlueJet API requires HTTPS protocol. Check base_url starts with https://")
+                return False
+            elif response.status_code in [401, 403]:
+                logger.error(f"❌ Authentication failed: {response.status_code} Unauthorized")
+                logger.error(f"Response: {response.text}")
+                logger.error("Check tokenID and tokenHash are correct in 1Password")
+                return False
             else:
                 logger.error(f"❌ Authentication failed: {response.status_code} - {response.text}")
                 return False
@@ -146,7 +167,9 @@ class BlueJetAPI:
 
     def fetch_products(self, limit: int = 200, offset: int = 0, retry_count: int = 0) -> List[Dict]:
         """Fetch products from BlueJet REST API with proper DataSet parsing"""
-        if not self.auth_token:
+        # Check token validity and re-authenticate if expired
+        if not self.auth_token or (self.token_expiry and datetime.now() >= self.token_expiry):
+            logger.info("Token expired or missing, re-authenticating...")
             if not self.authenticate():
                 return []
 
@@ -167,12 +190,28 @@ class BlueJetAPI:
                 }
             )
 
+            # Handle authentication failure (token expired)
+            if response.status_code == 401 and retry_count < 1:
+                logger.warning("⚠️ Token expired (401), re-authenticating...")
+                self.auth_token = None  # Force re-auth
+                if self.authenticate():
+                    return self.fetch_products(limit, offset, retry_count + 1)
+                else:
+                    logger.error("❌ Re-authentication failed")
+                    return []
+
             # Handle rate limiting (429 Too Many Requests)
             if response.status_code == 429 and retry_count < 3:
                 retry_after = int(response.headers.get('Retry-After', 5))
                 logger.warning(f"⚠️ Rate limited. Waiting {retry_after} seconds...")
                 time.sleep(retry_after)
                 return self.fetch_products(limit, offset, retry_count + 1)
+
+            # Handle HTTPS requirement (400 BadRequest)
+            if response.status_code == 400:
+                logger.error(f"❌ 400 BadRequest: {response.text}")
+                logger.error("BlueJet API requires HTTPS protocol")
+                return []
 
             if response.status_code == 200:
                 # Parse DataSet response structure
@@ -203,31 +242,42 @@ class BlueJetAPI:
                         product_data[col_name] = col_value
 
                     # Map BlueJet fields to our product structure
-                    # Adjust field names based on actual BlueJet schema
+                    # Support both Czech and English field names
+                    # CRITICAL: Use .get() with multiple fallbacks for robustness
                     product = {
-                        'id': str(product_data.get('ID', product_data.get('id', ''))),
-                        'name': product_data.get('Nazev', product_data.get('Name', product_data.get('name', ''))),
-                        'code': product_data.get('Kod', product_data.get('Code', product_data.get('code', ''))),
-                        'description': product_data.get('Popis', product_data.get('Description', product_data.get('description', ''))),
-                        'category': product_data.get('Kategorie', product_data.get('Category', product_data.get('category', ''))),
-                        'supplier': product_data.get('Dodavatel', product_data.get('Supplier', product_data.get('supplier', ''))),
-                        'price': float(product_data.get('Cena', product_data.get('Price', product_data.get('price', 0.0))) or 0.0),
-                        'currency': product_data.get('Mena', product_data.get('Currency', product_data.get('currency', 'CZK'))),
-                        'availability': product_data.get('Dostupnost', product_data.get('Availability', product_data.get('availability', ''))),
-                        'unit': product_data.get('Jednotka', product_data.get('Unit', product_data.get('unit', 'ks'))),
+                        'id': str(product_data.get('ID', product_data.get('id', product_data.get('productid', '')))),
+                        'name': product_data.get('Nazev', product_data.get('Name', product_data.get('name', product_data.get('nazev', '')))),
+                        'code': product_data.get('Kod', product_data.get('Code', product_data.get('code', product_data.get('kod', '')))),
+                        'description': product_data.get('Popis', product_data.get('Description', product_data.get('description', product_data.get('popis', '')))),
+                        'category': product_data.get('Kategorie', product_data.get('Category', product_data.get('category', product_data.get('kategorie', '')))),
+                        'supplier': product_data.get('Dodavatel', product_data.get('Supplier', product_data.get('supplier', product_data.get('dodavatel', '')))),
+                        'price': float(product_data.get('Cena', product_data.get('Price', product_data.get('price', product_data.get('cena', 0.0)))) or 0.0),
+                        'currency': product_data.get('Mena', product_data.get('Currency', product_data.get('currency', product_data.get('mena', 'CZK')))),
+                        'availability': product_data.get('Dostupnost', product_data.get('Availability', product_data.get('availability', product_data.get('dostupnost', '')))),
+                        'unit': product_data.get('Jednotka', product_data.get('Unit', product_data.get('unit', product_data.get('jednotka', 'ks')))),
+                        # Store all raw data for future reference
+                        'raw_data': product_data
                     }
 
                     # Only add if has valid ID
                     if product['id']:
                         products.append(product)
+                    else:
+                        logger.warning(f"⚠️ Skipping product without ID: {product_data.get('name', 'unknown')}")
 
                 logger.info(f"✅ Fetched {len(products)} products from BlueJet (offset {offset})")
                 return products
             else:
-                logger.error(f"❌ Failed to fetch products: {response.status_code}")
-                logger.error(f"Response: {response.text[:500]}")
+                logger.error(f"❌ Failed to fetch products: HTTP {response.status_code}")
+                logger.error(f"Request URL: {response.url}")
+                logger.error(f"Response headers: {dict(response.headers)}")
+                logger.error(f"Response body: {response.text[:1000]}")
                 return []
 
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to parse JSON response: {e}")
+            logger.error(f"Raw response: {response.text[:1000]}")
+            return []
         except Exception as e:
             logger.error(f"❌ Error fetching products: {e}")
             import traceback
