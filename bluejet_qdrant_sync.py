@@ -144,21 +144,26 @@ class BlueJetAPI:
             logger.error(f"❌ Authentication error: {e}")
             return False
 
-    def fetch_products(self, limit: int = 50, offset: int = 0, retry_count: int = 0) -> List[Dict]:
-        """Fetch products from BlueJet with rate limit handling"""
+    def fetch_products(self, limit: int = 200, offset: int = 0, retry_count: int = 0) -> List[Dict]:
+        """Fetch products from BlueJet REST API with proper DataSet parsing"""
         if not self.auth_token:
             if not self.authenticate():
                 return []
 
         try:
-            # Fetch products using BlueJet REST API with X-Token header
+            # Fetch products using BlueJet REST API
+            # no=217 is the object number for products (Produkty) in BlueJet
             response = requests.get(
-                f"{self.api_base}/data",  # REST API data endpoint
-                params={'limit': limit, 'offset': offset, 'entity': 'products'},
+                f"{self.api_base}/data",
+                params={
+                    'no': 217,  # Required: Object number for products
+                    'offset': offset,
+                    'limit': min(limit, 200),  # Max 200 per API docs
+                    'fields': 'all'  # Get all columns
+                },
                 headers={
-                    'X-Token': self.auth_token,  # Token in X-Token header per API docs
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json; charset=utf-8'
+                    'X-Token': self.auth_token,
+                    'Accept': 'application/json'
                 }
             )
 
@@ -170,42 +175,69 @@ class BlueJetAPI:
                 return self.fetch_products(limit, offset, retry_count + 1)
 
             if response.status_code == 200:
-                # Parse JSON response
+                # Parse DataSet response structure
                 data = response.json()
                 products = []
 
-                # Handle different response structures
-                items = data if isinstance(data, list) else data.get('items', data.get('data', []))
+                # Get total count from header
+                total_count = response.headers.get('X-Total-Count', 'unknown')
+                logger.info(f"Total products in BlueJet: {total_count}")
 
-                for item in items:
+                # Parse rows array
+                rows = data.get('rows', [])
+
+                # Debug: Log column names from first row
+                if rows and offset == 0:
+                    first_row_columns = [col.get('name') for col in rows[0].get('columns', [])]
+                    logger.info(f"📋 Available columns: {', '.join(first_row_columns[:20])}...")
+
+                for row in rows:
+                    # Each row has columns array with name/value pairs
+                    columns = row.get('columns', [])
+
+                    # Convert columns array to dict
+                    product_data = {}
+                    for col in columns:
+                        col_name = col.get('name', '')
+                        col_value = col.get('value', '')
+                        product_data[col_name] = col_value
+
+                    # Map BlueJet fields to our product structure
+                    # Adjust field names based on actual BlueJet schema
                     product = {
-                        'id': str(item.get('id', item.get('ID', ''))),
-                        'name': item.get('name', item.get('Name', '')),
-                        'code': item.get('code', item.get('Code', '')),
-                        'description': item.get('description', item.get('Description', '')),
-                        'category': item.get('category', item.get('Category', '')),
-                        'supplier': item.get('supplier', item.get('Supplier', '')),
-                        'price': float(item.get('price', item.get('Price', 0.0))),
-                        'currency': item.get('currency', item.get('Currency', 'CZK')),
-                        'availability': item.get('availability', item.get('Availability', '')),
-                        'unit': item.get('unit', item.get('Unit', 'ks')),
+                        'id': str(product_data.get('ID', product_data.get('id', ''))),
+                        'name': product_data.get('Nazev', product_data.get('Name', product_data.get('name', ''))),
+                        'code': product_data.get('Kod', product_data.get('Code', product_data.get('code', ''))),
+                        'description': product_data.get('Popis', product_data.get('Description', product_data.get('description', ''))),
+                        'category': product_data.get('Kategorie', product_data.get('Category', product_data.get('category', ''))),
+                        'supplier': product_data.get('Dodavatel', product_data.get('Supplier', product_data.get('supplier', ''))),
+                        'price': float(product_data.get('Cena', product_data.get('Price', product_data.get('price', 0.0))) or 0.0),
+                        'currency': product_data.get('Mena', product_data.get('Currency', product_data.get('currency', 'CZK'))),
+                        'availability': product_data.get('Dostupnost', product_data.get('Availability', product_data.get('availability', ''))),
+                        'unit': product_data.get('Jednotka', product_data.get('Unit', product_data.get('unit', 'ks'))),
                     }
-                    products.append(product)
 
-                logger.info(f"✅ Fetched {len(products)} products from BlueJet")
+                    # Only add if has valid ID
+                    if product['id']:
+                        products.append(product)
+
+                logger.info(f"✅ Fetched {len(products)} products from BlueJet (offset {offset})")
                 return products
             else:
                 logger.error(f"❌ Failed to fetch products: {response.status_code}")
+                logger.error(f"Response: {response.text[:500]}")
                 return []
 
         except Exception as e:
             logger.error(f"❌ Error fetching products: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
 
     def fetch_all_products(self) -> List[Dict]:
         """Fetch all products (paginated with rate limiting and verification)"""
         all_products = []
-        batch_size = 50  # Reasonable batch size for API stability
+        batch_size = 200  # Max batch size per BlueJet API (documented limit)
         offset = 0
         delay_between_requests = 2.0  # Seconds between API calls
         consecutive_failures = 0
@@ -354,7 +386,7 @@ class QdrantSync:
                 continue
 
         # Upload to Qdrant in batches (with verification and confirmation)
-        batch_size = 50  # Reasonable batch size matching fetch size
+        batch_size = 100  # Qdrant can handle larger batches efficiently
         total_uploaded = 0
         failed_batches = []
 
