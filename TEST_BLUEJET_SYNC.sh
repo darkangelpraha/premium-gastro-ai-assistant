@@ -71,20 +71,42 @@ echo ""
 echo "🚀 Starting sync..."
 echo "─────────────────────────────────────"
 
-# Run with timeout and capture output
-timeout 60s python3 bluejet_qdrant_sync.py 2>&1 | head -50 || {
-    EXIT_CODE=$?
-    if [ $EXIT_CODE -eq 124 ]; then
+# Run sync (with timeout if available, otherwise direct)
+if command -v timeout &> /dev/null; then
+    timeout 60s python3 bluejet_qdrant_sync.py 2>&1 | head -50 || {
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 124 ]; then
+            echo ""
+            echo "⏱️  Sync is taking a while (good sign!)"
+            echo "💡 Let it run in background: python3 bluejet_qdrant_sync.py &"
+        else
+            echo ""
+            echo "❌ Sync failed with exit code $EXIT_CODE"
+            echo "📝 Check the error above"
+        fi
+        exit $EXIT_CODE
+    }
+else
+    # Mac doesn't have timeout - run directly with output limit
+    python3 bluejet_qdrant_sync.py 2>&1 | head -50 &
+    SYNC_PID=$!
+
+    # Wait up to 60 seconds
+    for i in {1..60}; do
+        if ! kill -0 $SYNC_PID 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+
+    # If still running, let it continue in background
+    if kill -0 $SYNC_PID 2>/dev/null; then
         echo ""
         echo "⏱️  Sync is taking a while (good sign!)"
-        echo "💡 Let it run in background: python3 bluejet_qdrant_sync.py &"
-    else
-        echo ""
-        echo "❌ Sync failed with exit code $EXIT_CODE"
-        echo "📝 Check the error above"
+        echo "💡 Running in background (PID: $SYNC_PID)"
+        echo "   Check progress: tail -f bluejet_sync.log"
     fi
-    exit $EXIT_CODE
-}
+fi
 
 echo "─────────────────────────────────────"
 echo ""
