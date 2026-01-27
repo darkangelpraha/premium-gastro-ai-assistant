@@ -344,13 +344,14 @@ class QdrantSync:
         self.collection_name = 'bluejet_products'
 
         try:
-            # Create client with timeout settings
+            # Create client with extended timeout for large sync operations
+            # 109k products = ~547 batches fetch + ~1,093 batches upload = ~40 min total sync
             self.client = QdrantClient(
                 host=self.host,
                 port=self.port,
-                timeout=30.0  # 30 second timeout for operations
+                timeout=300.0  # 5 minute timeout per operation (handles large batches on NAS)
             )
-            logger.info(f"✅ Connected to Qdrant at {self.host}:{self.port}")
+            logger.info(f"✅ Connected to Qdrant at {self.host}:{self.port} (timeout: 300s)")
         except Exception as e:
             logger.error(f"❌ Failed to connect to Qdrant: {e}")
             raise
@@ -527,12 +528,16 @@ def main():
 
         # STREAMING SYNC: Fetch batch → Upload batch → Repeat
         logger.info("📥 Starting streaming sync (fetch + upload per batch)...")
+        logger.info("⏱️  Expected sync time for 109k products: ~40-60 minutes")
+        logger.info("   (Fetching: ~18 min, Uploading: ~18 min, Processing: ~4-24 min)")
 
         offset = 0
         batch_size = 200  # BlueJet API max
         total_fetched = 0
         total_uploaded = 0
         consecutive_failures = 0
+        import time as time_module
+        sync_start_time = time_module.time()
 
         while True:
             logger.info(f"📥 Fetching batch at offset {offset}...")
@@ -566,10 +571,15 @@ def main():
             offset += batch_size
             time.sleep(2.0)  # Rate limiting between batches
 
+        # Calculate elapsed time
+        elapsed_seconds = time_module.time() - sync_start_time
+        elapsed_minutes = elapsed_seconds / 60
+
         logger.info("=" * 60)
         logger.info(f"✅ SYNC COMPLETE")
         logger.info(f"   Products fetched: {total_fetched}")
         logger.info(f"   Products uploaded: {total_uploaded}")
+        logger.info(f"   Elapsed time: {elapsed_minutes:.1f} minutes ({elapsed_seconds:.0f} seconds)")
         logger.info(f"   Collection: {qdrant.collection_name}")
         logger.info(f"   Qdrant: {qdrant.host}:{qdrant.port}")
         logger.info("=" * 60)
