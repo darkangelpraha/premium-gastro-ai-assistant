@@ -344,7 +344,12 @@ class QdrantSync:
         self.collection_name = 'bluejet_products'
 
         try:
-            self.client = QdrantClient(host=self.host, port=self.port)
+            # Create client with timeout settings
+            self.client = QdrantClient(
+                host=self.host,
+                port=self.port,
+                timeout=30.0  # 30 second timeout for operations
+            )
             logger.info(f"✅ Connected to Qdrant at {self.host}:{self.port}")
         except Exception as e:
             logger.error(f"❌ Failed to connect to Qdrant: {e}")
@@ -353,21 +358,35 @@ class QdrantSync:
     def create_collection_if_not_exists(self):
         """Create products collection if it doesn't exist"""
         try:
-            collections = self.client.get_collections().collections
-            collection_names = [c.name for c in collections]
+            logger.info(f"Checking if collection '{self.collection_name}' exists...")
 
-            if self.collection_name not in collection_names:
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
-                )
-                logger.info(f"✅ Created collection: {self.collection_name}")
-            else:
-                logger.info(f"Collection {self.collection_name} already exists")
+            # Try to get collection info directly (faster than listing all)
+            try:
+                collection_info = self.client.get_collection(self.collection_name)
+                logger.info(f"Collection '{self.collection_name}' already exists ({collection_info.points_count} points)")
+                return
+            except Exception:
+                # Collection doesn't exist, create it
+                logger.info(f"Collection doesn't exist, creating '{self.collection_name}'...")
+                pass
+
+            # Create collection (we only get here if it doesn't exist)
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+            )
+            logger.info(f"✅ Created collection: {self.collection_name}")
 
         except Exception as e:
-            logger.error(f"❌ Error creating collection: {e}")
-            raise
+            # If collection already exists, that's fine - log and continue
+            error_msg = str(e).lower()
+            if 'already exists' in error_msg or 'exist' in error_msg:
+                logger.info(f"Collection '{self.collection_name}' already exists (ok)")
+            else:
+                logger.error(f"❌ Error with collection: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                raise
 
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for text (placeholder - integrate with OpenAI/Anthropic)"""
