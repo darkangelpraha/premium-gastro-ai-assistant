@@ -493,7 +493,7 @@ class QdrantSync:
 
 
 def main():
-    """Main sync process"""
+    """Main sync process - STREAMING MODE (fetch and upload in batches)"""
     logger.info("=" * 60)
     logger.info("BlueJet → Qdrant Product Sync Service")
     logger.info("=" * 60)
@@ -503,22 +503,54 @@ def main():
         bluejet = BlueJetAPI()
         qdrant = QdrantSync()
 
-        # Fetch products from BlueJet
-        logger.info("📥 Fetching products from BlueJet CRM...")
-        products = bluejet.fetch_all_products()
+        # Create collection first
+        qdrant.create_collection_if_not_exists()
 
-        if not products:
-            logger.error("❌ No products fetched. Exiting.")
-            sys.exit(1)
+        # STREAMING SYNC: Fetch batch → Upload batch → Repeat
+        logger.info("📥 Starting streaming sync (fetch + upload per batch)...")
 
-        # Sync to Qdrant
-        logger.info(f"📤 Syncing {len(products)} products to Qdrant...")
-        uploaded = qdrant.sync_products(products)
+        offset = 0
+        batch_size = 200  # BlueJet API max
+        total_fetched = 0
+        total_uploaded = 0
+        consecutive_failures = 0
+
+        while True:
+            logger.info(f"📥 Fetching batch at offset {offset}...")
+
+            # Fetch batch from BlueJet
+            products = bluejet.fetch_products(limit=batch_size, offset=offset)
+
+            if not products:
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    logger.info("No more products. Sync complete.")
+                    break
+                offset += batch_size
+                continue
+
+            consecutive_failures = 0
+            total_fetched += len(products)
+
+            # Upload batch immediately to Qdrant
+            logger.info(f"📤 Uploading {len(products)} products to Qdrant...")
+            uploaded = qdrant.sync_products(products)
+            total_uploaded += uploaded
+
+            logger.info(f"✅ Batch complete: {uploaded}/{len(products)} uploaded (total: {total_uploaded})")
+
+            # Check if this was the last batch
+            if len(products) < batch_size:
+                logger.info("📦 Last batch completed")
+                break
+
+            offset += batch_size
+            time.sleep(2.0)  # Rate limiting between batches
 
         logger.info("=" * 60)
         logger.info(f"✅ SYNC COMPLETE")
-        logger.info(f"   Products fetched: {len(products)}")
-        logger.info(f"   Products uploaded: {uploaded}")
+        logger.info(f"   Products fetched: {total_fetched}")
+        logger.info(f"   Products uploaded: {total_uploaded}")
         logger.info(f"   Collection: {qdrant.collection_name}")
         logger.info(f"   Qdrant: {qdrant.host}:{qdrant.port}")
         logger.info("=" * 60)
