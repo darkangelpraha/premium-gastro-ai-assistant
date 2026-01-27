@@ -1,0 +1,157 @@
+# BlueJet → Qdrant Sync Configuration
+# Production-ready settings with best practices
+
+# Embedding Service
+embedding:
+  provider: "openai"  # Options: openai, local, cohere
+  model: "text-embedding-3-small"  # Cost-effective, multilingual
+  dimensions: 1536
+  batch_size: 100  # OpenAI allows up to 2048 inputs per request
+  cache_enabled: true  # Cache embeddings to reduce API calls
+  cache_path: ".embedding_cache"
+
+  # Fallback to local if OpenAI fails
+  fallback:
+    enabled: true
+    provider: "local"
+    model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"  # Czech + English
+
+# Sync Strategy
+sync:
+  mode: "incremental"  # Options: full, incremental
+  batch_size: 200  # BlueJet API max
+  parallel_batches: 3  # Fetch 3 batches in parallel
+
+  # Incremental sync settings
+  incremental:
+    enabled: true
+    timestamp_field: "last_modified"  # BlueJet field to track changes
+    state_file: ".sync_state.json"  # Store last sync timestamp
+
+  # Resume capability
+  resume:
+    enabled: true
+    checkpoint_file: ".sync_checkpoint.json"
+    checkpoint_interval: 10  # Save checkpoint every N batches
+
+# Data Validation
+validation:
+  enabled: true
+  required_fields:
+    - "ID"
+    - "Nazev"  # Name in Czech
+  skip_invalid: true  # Skip invalid records instead of failing
+  log_invalid: true
+  invalid_log_file: "invalid_records.jsonl"
+
+# Rate Limiting
+rate_limit:
+  bluejet:
+    requests_per_minute: 30
+    delay_between_batches: 2.0  # seconds
+  qdrant:
+    requests_per_minute: 60
+    delay_between_batches: 1.0
+  openai:
+    requests_per_minute: 3000  # Tier 2 limit
+    tokens_per_minute: 1000000  # Tier 2 limit
+
+# Retry Logic
+retry:
+  max_attempts: 4
+  backoff_strategy: "exponential"  # Options: exponential, linear, fixed
+  backoff_base: 2.0  # seconds (2, 4, 8, 16)
+  retry_on_status: [429, 500, 502, 503, 504]
+
+# Monitoring
+monitoring:
+  enabled: true
+  log_level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  metrics_file: "sync_metrics.json"
+
+  # Health checks
+  health_check:
+    enabled: true
+    endpoint_port: 8765
+
+  # Alerting
+  alerts:
+    enabled: false  # Set to true when email/slack configured
+    on_failure: true
+    on_count_mismatch: true
+    on_data_quality_issues: true
+
+# Performance
+performance:
+  async_enabled: true  # Use asyncio for parallel operations
+  worker_threads: 4  # For parallel batch processing
+  connection_pool_size: 10
+
+# BlueJet Entity Configuration
+entities:
+  products:
+    object_no: 217
+    collection_name: "bluejet_products"
+    sync_enabled: true
+    priority: 1  # Sync order
+
+  contacts:
+    object_no: 222
+    collection_name: "bluejet_contacts"
+    sync_enabled: true
+    priority: 2
+
+  companies:
+    object_no: 225
+    collection_name: "bluejet_companies"
+    sync_enabled: true
+    priority: 3
+
+  activities:
+    object_no: 227
+    collection_name: "bluejet_activities"
+    sync_enabled: false  # Disable if not needed
+    priority: 4
+
+  issued_offers:
+    object_no: 293
+    collection_name: "bluejet_issued_offers"
+    sync_enabled: true
+    priority: 5
+
+  received_orders:
+    object_no: 321
+    collection_name: "bluejet_received_orders"
+    sync_enabled: true
+    priority: 6
+
+  issued_invoices:
+    object_no: 323
+    collection_name: "bluejet_issued_invoices"
+    sync_enabled: true
+    priority: 7
+
+  received_invoices:
+    object_no: 328
+    collection_name: "bluejet_received_invoices"
+    sync_enabled: true
+    priority: 8
+
+# Qdrant Configuration
+qdrant:
+  timeout: 300.0  # 5 minutes for NAS operations
+  grpc_enabled: false  # Use REST API
+  prefer_grpc: false
+
+# Data Quality
+data_quality:
+  enabled: true
+  checks:
+    - name: "missing_required_fields"
+      severity: "error"
+    - name: "invalid_data_types"
+      severity: "warning"
+    - name: "empty_searchable_text"
+      severity: "warning"
+    - name: "duplicate_ids"
+      severity: "error"
