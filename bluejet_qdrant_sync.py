@@ -102,12 +102,13 @@ class BlueJetAPI:
     def authenticate(self) -> bool:
         """Authenticate with BlueJet API"""
         try:
-            # Build authentication XML request (xmlns required by BlueJet API)
+            # Build authentication XML request (per BlueJet REST API docs)
+            # NOTE: Tag must be <User> with capital U, no xmlns attribute
             auth_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<user xmlns="http://www.bluejet.cz/API">
+<User>
     <tokenID>{self.token_id}</tokenID>
     <tokenHash>{self.token_hash}</tokenHash>
-</user>"""
+</User>"""
 
             logger.info(f"Authenticating to: {self.auth_url}")
             logger.info(f"TokenID length: {len(self.token_id)}, TokenHash length: {len(self.token_hash)}")
