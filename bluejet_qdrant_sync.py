@@ -112,6 +112,11 @@ class BlueJetAPI:
             logger.info(f"Authenticating to: {self.auth_url}")
             logger.info(f"TokenID length: {len(self.token_id)}, TokenHash length: {len(self.token_hash)}")
 
+            # Debug: Show XML structure (masked for security)
+            masked_xml = auth_xml.replace(self.token_id, f"{self.token_id[:4]}...{self.token_id[-4:]}")
+            masked_xml = masked_xml.replace(self.token_hash, f"{self.token_hash[:4]}...{self.token_hash[-4:]}")
+            logger.info(f"Sending XML:\n{masked_xml}")
+
             response = requests.post(
                 self.auth_url,
                 data=auth_xml.encode('utf-8'),
