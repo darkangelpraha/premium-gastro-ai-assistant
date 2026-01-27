@@ -101,29 +101,24 @@ class BlueJetAPI:
         logger.info(f"BlueJet API initialized: {self.base_url} (user: {self.username}, env: {self.environment})")
 
     def authenticate(self) -> bool:
-        """Authenticate with BlueJet API"""
+        """Authenticate with BlueJet REST API using JSON"""
         try:
-            # Build authentication XML request (per BlueJet REST API docs)
-            # NOTE: Tag must be <User> with capital U, no xmlns attribute
-            auth_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<User>
-    <tokenID>{self.token_id}</tokenID>
-    <tokenHash>{self.token_hash}</tokenHash>
-</User>"""
+            # Build authentication JSON request (per BlueJet REST API docs)
+            auth_data = {
+                "tokenID": self.token_id,
+                "tokenHash": self.token_hash
+            }
 
             logger.info(f"Authenticating to: {self.auth_url}")
             logger.info(f"TokenID length: {len(self.token_id)}, TokenHash length: {len(self.token_hash)}")
-
-            # Debug: Show XML structure (masked for security)
-            masked_xml = auth_xml.replace(self.token_id, f"{self.token_id[:4]}...{self.token_id[-4:]}")
-            masked_xml = masked_xml.replace(self.token_hash, f"{self.token_hash[:4]}...{self.token_hash[-4:]}")
-            logger.info(f"Sending XML:\n{masked_xml}")
+            logger.info(f"Sending JSON: {{\"tokenID\": \"{self.token_id[:4]}...{self.token_id[-4:]}\", \"tokenHash\": \"{self.token_hash[:4]}...{self.token_hash[-4:]}\"}}\"")
 
             response = requests.post(
                 self.auth_url,
-                data=auth_xml.encode('utf-8'),
+                json=auth_data,
                 headers={
-                    'Content-Type': 'application/xml; charset=utf-8',
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Accept': 'application/json'
                 }
             )
 
@@ -131,15 +126,15 @@ class BlueJetAPI:
             logger.info(f"Response body: {response.text}")
 
             if response.status_code == 200:
-                # Parse token from response
-                root = ET.fromstring(response.text)
-                token_element = root.find('.//token')
-                if token_element is not None and token_element.text:
-                    self.auth_token = token_element.text
+                # Parse JSON response
+                result = response.json()
+                if result.get('succeeded') and result.get('token'):
+                    self.auth_token = result['token']
                     logger.info("✅ BlueJet authentication successful")
+                    logger.info(f"Token valid for 24 hours: {self.auth_token[:10]}...")
                     return True
                 else:
-                    logger.error("❌ No token found in response")
+                    logger.error(f"❌ Authentication failed: {result.get('message', 'Unknown error')}")
                     return False
             else:
                 logger.error(f"❌ Authentication failed: {response.status_code} - {response.text}")
@@ -156,13 +151,14 @@ class BlueJetAPI:
                 return []
 
         try:
-            # Fetch products (adjust endpoint based on BlueJet API structure)
+            # Fetch products using BlueJet REST API with X-Token header
             response = requests.get(
-                f"{self.api_base}/products",
-                params={'limit': limit, 'offset': offset},
+                f"{self.api_base}/data",  # REST API data endpoint
+                params={'limit': limit, 'offset': offset, 'entity': 'products'},
                 headers={
-                    'Authorization': f'Bearer {self.auth_token}',
-                    'Content-Type': 'application/xml'
+                    'X-Token': self.auth_token,  # Token in X-Token header per API docs
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json; charset=utf-8'
                 }
             )
 
@@ -174,22 +170,25 @@ class BlueJetAPI:
                 return self.fetch_products(limit, offset, retry_count + 1)
 
             if response.status_code == 200:
-                # Parse XML response
-                root = ET.fromstring(response.text)
+                # Parse JSON response
+                data = response.json()
                 products = []
 
-                for product_elem in root.findall('.//product'):
+                # Handle different response structures
+                items = data if isinstance(data, list) else data.get('items', data.get('data', []))
+
+                for item in items:
                     product = {
-                        'id': product_elem.find('id').text if product_elem.find('id') is not None else '',
-                        'name': product_elem.find('name').text if product_elem.find('name') is not None else '',
-                        'code': product_elem.find('code').text if product_elem.find('code') is not None else '',
-                        'description': product_elem.find('description').text if product_elem.find('description') is not None else '',
-                        'category': product_elem.find('category').text if product_elem.find('category') is not None else '',
-                        'supplier': product_elem.find('supplier').text if product_elem.find('supplier') is not None else '',
-                        'price': float(product_elem.find('price').text) if product_elem.find('price') is not None else 0.0,
-                        'currency': product_elem.find('currency').text if product_elem.find('currency') is not None else 'CZK',
-                        'availability': product_elem.find('availability').text if product_elem.find('availability') is not None else '',
-                        'unit': product_elem.find('unit').text if product_elem.find('unit') is not None else 'ks',
+                        'id': str(item.get('id', item.get('ID', ''))),
+                        'name': item.get('name', item.get('Name', '')),
+                        'code': item.get('code', item.get('Code', '')),
+                        'description': item.get('description', item.get('Description', '')),
+                        'category': item.get('category', item.get('Category', '')),
+                        'supplier': item.get('supplier', item.get('Supplier', '')),
+                        'price': float(item.get('price', item.get('Price', 0.0))),
+                        'currency': item.get('currency', item.get('Currency', 'CZK')),
+                        'availability': item.get('availability', item.get('Availability', '')),
+                        'unit': item.get('unit', item.get('Unit', 'ks')),
                     }
                     products.append(product)
 
