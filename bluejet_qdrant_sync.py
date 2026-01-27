@@ -149,7 +149,7 @@ class BlueJetAPI:
             logger.error(f"❌ Authentication error: {e}")
             return False
 
-    def fetch_products(self, limit: int = 250, offset: int = 0, retry_count: int = 0) -> List[Dict]:
+    def fetch_products(self, limit: int = 50, offset: int = 0, retry_count: int = 0) -> List[Dict]:
         """Fetch products from BlueJet with rate limit handling"""
         if not self.auth_token:
             if not self.authenticate():
@@ -204,29 +204,53 @@ class BlueJetAPI:
             return []
 
     def fetch_all_products(self) -> List[Dict]:
-        """Fetch all products (paginated with rate limiting)"""
+        """Fetch all products (paginated with rate limiting and verification)"""
         all_products = []
-        limit = 250  # Reduced from 1000 to be API-friendly
+        batch_size = 50  # Reasonable batch size for API stability
         offset = 0
-        delay_between_requests = 1.5  # Seconds between API calls
+        delay_between_requests = 2.0  # Seconds between API calls
+        consecutive_failures = 0
+        max_consecutive_failures = 3
 
         while True:
-            products = self.fetch_products(limit=limit, offset=offset)
+            logger.info(f"📥 Fetching batch starting at offset {offset}...")
+            products = self.fetch_products(limit=batch_size, offset=offset)
+
+            # Verify batch was successful
             if not products:
-                break
+                consecutive_failures += 1
+                logger.warning(f"⚠️ Empty batch at offset {offset} (failure {consecutive_failures}/{max_consecutive_failures})")
 
-            all_products.extend(products)
-            offset += limit
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.info("No more products or max failures reached. Stopping.")
+                    break
 
-            logger.info(f"Progress: {len(all_products)} products fetched...")
+                # Wait before trying next batch
+                time.sleep(delay_between_requests)
+                offset += batch_size
+                continue
 
-            if len(products) < limit:
+            # Reset failure counter on success
+            consecutive_failures = 0
+
+            # Verify product data quality
+            valid_products = [p for p in products if p.get('id') and p.get('name')]
+            if len(valid_products) < len(products):
+                logger.warning(f"⚠️ Filtered out {len(products) - len(valid_products)} invalid products")
+
+            all_products.extend(valid_products)
+            offset += batch_size
+
+            logger.info(f"✅ Batch verified: {len(valid_products)} valid products (total: {len(all_products)})")
+
+            if len(products) < batch_size:
+                logger.info("📦 Last batch received (smaller than batch size)")
                 break  # Last page
 
             # Rate limiting: Wait between requests to avoid hammering the API
             time.sleep(delay_between_requests)
 
-        logger.info(f"✅ Total products fetched: {len(all_products)}")
+        logger.info(f"✅ Total products fetched and verified: {len(all_products)}")
         return all_products
 
 
@@ -330,29 +354,60 @@ class QdrantSync:
                 logger.warning(f"⚠️ Error processing product {product.get('id')}: {e}")
                 continue
 
-        # Upload to Qdrant in batches (with small delays for smooth operation)
-        batch_size = 100
+        # Upload to Qdrant in batches (with verification and confirmation)
+        batch_size = 50  # Reasonable batch size matching fetch size
         total_uploaded = 0
+        failed_batches = []
 
         for i in range(0, len(points), batch_size):
             batch = points[i:i+batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (len(points) + batch_size - 1) // batch_size
+
             try:
-                self.client.upsert(
+                logger.info(f"📤 Uploading batch {batch_num}/{total_batches} ({len(batch)} products)...")
+
+                # Upload batch
+                operation_info = self.client.upsert(
                     collection_name=self.collection_name,
                     points=batch
                 )
-                total_uploaded += len(batch)
-                logger.info(f"Uploaded batch: {total_uploaded}/{len(points)} products")
+
+                # Verify upload was successful
+                if operation_info and hasattr(operation_info, 'status'):
+                    if operation_info.status == 'completed' or str(operation_info.status).lower() == 'completed':
+                        total_uploaded += len(batch)
+                        logger.info(f"✅ Batch {batch_num} verified: {len(batch)} products uploaded successfully")
+                    else:
+                        logger.error(f"❌ Batch {batch_num} upload status unclear: {operation_info.status}")
+                        failed_batches.append(batch_num)
+                else:
+                    # No status returned - assume success if no exception
+                    total_uploaded += len(batch)
+                    logger.info(f"✅ Batch {batch_num} uploaded: {len(batch)} products (status unknown, no error)")
 
                 # Small delay between batches for smooth operation
                 if i + batch_size < len(points):
-                    time.sleep(0.5)
+                    time.sleep(1.0)
 
             except Exception as e:
-                logger.error(f"❌ Error uploading batch: {e}")
+                logger.error(f"❌ Batch {batch_num} failed: {e}")
+                failed_batches.append(batch_num)
                 continue
 
-        logger.info(f"✅ Sync complete: {total_uploaded} products uploaded to Qdrant")
+        # Final verification
+        if failed_batches:
+            logger.warning(f"⚠️ {len(failed_batches)} batch(es) failed: {failed_batches}")
+
+        logger.info(f"✅ Sync complete: {total_uploaded}/{len(points)} products uploaded to Qdrant")
+
+        # Double-check collection count
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
+            logger.info(f"🔍 Verification: Collection now contains {collection_info.points_count} total points")
+        except Exception as e:
+            logger.warning(f"Could not verify collection count: {e}")
+
         return total_uploaded
 
 
