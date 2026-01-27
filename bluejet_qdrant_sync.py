@@ -16,6 +16,7 @@ import sys
 import requests
 import json
 import subprocess
+import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import logging
@@ -148,8 +149,8 @@ class BlueJetAPI:
             logger.error(f"❌ Authentication error: {e}")
             return False
 
-    def fetch_products(self, limit: int = 1000, offset: int = 0) -> List[Dict]:
-        """Fetch products from BlueJet"""
+    def fetch_products(self, limit: int = 250, offset: int = 0, retry_count: int = 0) -> List[Dict]:
+        """Fetch products from BlueJet with rate limit handling"""
         if not self.auth_token:
             if not self.authenticate():
                 return []
@@ -164,6 +165,13 @@ class BlueJetAPI:
                     'Content-Type': 'application/xml'
                 }
             )
+
+            # Handle rate limiting (429 Too Many Requests)
+            if response.status_code == 429 and retry_count < 3:
+                retry_after = int(response.headers.get('Retry-After', 5))
+                logger.warning(f"⚠️ Rate limited. Waiting {retry_after} seconds...")
+                time.sleep(retry_after)
+                return self.fetch_products(limit, offset, retry_count + 1)
 
             if response.status_code == 200:
                 # Parse XML response
@@ -196,10 +204,11 @@ class BlueJetAPI:
             return []
 
     def fetch_all_products(self) -> List[Dict]:
-        """Fetch all products (paginated)"""
+        """Fetch all products (paginated with rate limiting)"""
         all_products = []
-        limit = 1000
+        limit = 250  # Reduced from 1000 to be API-friendly
         offset = 0
+        delay_between_requests = 1.5  # Seconds between API calls
 
         while True:
             products = self.fetch_products(limit=limit, offset=offset)
@@ -213,6 +222,9 @@ class BlueJetAPI:
 
             if len(products) < limit:
                 break  # Last page
+
+            # Rate limiting: Wait between requests to avoid hammering the API
+            time.sleep(delay_between_requests)
 
         logger.info(f"✅ Total products fetched: {len(all_products)}")
         return all_products
@@ -318,7 +330,7 @@ class QdrantSync:
                 logger.warning(f"⚠️ Error processing product {product.get('id')}: {e}")
                 continue
 
-        # Upload to Qdrant in batches
+        # Upload to Qdrant in batches (with small delays for smooth operation)
         batch_size = 100
         total_uploaded = 0
 
@@ -331,6 +343,11 @@ class QdrantSync:
                 )
                 total_uploaded += len(batch)
                 logger.info(f"Uploaded batch: {total_uploaded}/{len(points)} products")
+
+                # Small delay between batches for smooth operation
+                if i + batch_size < len(points):
+                    time.sleep(0.5)
+
             except Exception as e:
                 logger.error(f"❌ Error uploading batch: {e}")
                 continue
