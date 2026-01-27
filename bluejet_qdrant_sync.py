@@ -3,6 +3,14 @@
 BlueJet → Qdrant Product Sync Service
 Syncs products from BlueJet CRM to Qdrant vector database for semantic search
 
+⚠️  CRITICAL: READ-ONLY OPERATION - NON-DESTRUCTIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This script ONLY reads data from BlueJet using GET requests.
+NO write operations (POST/PUT/DELETE) are performed.
+Your BlueJet data is NEVER modified or deleted.
+Safe to run while working in BlueJet CRM.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Credentials from environment variables (set via 1Password):
 - BLUEJET_URL: Your BlueJet instance URL (e.g., https://your-instance.bluejet.cz)
 - BLUEJET_TOKEN_ID: API token identifier
