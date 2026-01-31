@@ -97,7 +97,12 @@ class TwilioWhatsAppLindySetup:
                 if sandbox_info:
                     # Use redaction helper to mask sensitive phone numbers
                     redacted_info = redact_sandbox_info(sandbox_info)
-                    print(f"   📱 WhatsApp Sandbox: {redacted_info}")
+                    status = redacted_info.get('status', 'unknown')
+                    number = redacted_info.get('number')
+                    if number:
+                        print(f"   📱 WhatsApp sandbox status: {status}, number: {number}")
+                    else:
+                        print(f"   📱 WhatsApp sandbox status: {status}")
                 
                 self.setup_log.append("✅ Twilio connection verified")
                 return True
