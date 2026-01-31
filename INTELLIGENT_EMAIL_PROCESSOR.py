@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import logging
 from dataclasses import dataclass
+from utils.secrets_loader import load_secret
 
 @dataclass
 class EmailProcessingResult:
@@ -44,9 +45,21 @@ class IntelligentEmailProcessor:
         # Load VIP analysis results
         self.load_vip_analysis()
 
-        # Missive API setup (if available)
-        self.missive_token = os.getenv('MISSIVE_API_TOKEN')
-        self.missive_org = os.getenv('MISSIVE_ORG_ID')
+        # Missive API setup (if available) - load from 1Password with .env fallback
+        self.missive_token = load_secret(
+            'MISSIVE_API_TOKEN',
+            vault='AI',
+            item_names=['Missive'],
+            field_names=['MISSIVE_API_TOKEN', 'token', 'api_key', 'password'],
+            required=False
+        )
+        self.missive_org = load_secret(
+            'MISSIVE_ORG_ID',
+            vault='AI',
+            item_names=['Missive'],
+            field_names=['MISSIVE_ORG_ID', 'org_id', 'organization'],
+            required=False
+        )
 
     def load_vip_analysis(self):
         """Load the generated VIP analysis data"""

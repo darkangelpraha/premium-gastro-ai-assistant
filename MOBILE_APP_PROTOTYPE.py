@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 import logging
 from dataclasses import dataclass
 import os
+from utils.secrets_loader import load_secret
 
 @dataclass
 class MobileAssistantContext:
@@ -26,13 +27,28 @@ class PremiumGastroMobileAssistant:
     """Mobile assistant optimizing for local processing and free services"""
     
     def __init__(self):
-        # Free API configurations
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')  # Free: 25 requests/day
-        self.hf_token = os.getenv('HUGGING_FACE_TOKEN')    # Free tier
+        # Free API configurations - load from 1Password with .env fallback
+        self.gemini_api_key = load_secret(
+            'GEMINI_API_KEY',
+            vault='AI',
+            item_names=['Gemini', 'Google AI'],
+            field_names=['GEMINI_API_KEY', 'api_key', 'key', 'password']
+        )
+        self.hf_token = load_secret(
+            'HUGGING_FACE_TOKEN',
+            vault='AI',
+            item_names=['Hugging Face', 'HuggingFace'],
+            field_names=['HUGGING_FACE_TOKEN', 'token', 'api_key', 'password']
+        )
         
         # Supabase sync
         self.supabase_url = "https://lowgijppjapmetedkvjb.supabase.co"
-        self.supabase_key = os.getenv('SUPABASE_KEY')
+        self.supabase_key = load_secret(
+            'SUPABASE_KEY',
+            vault='AI',
+            item_names=['Supabase'],
+            field_names=['SUPABASE_KEY', 'api_key', 'service_key', 'password']
+        )
         
         # Local processing capabilities
         self.context = MobileAssistantContext()
