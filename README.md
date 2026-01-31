@@ -116,6 +116,56 @@ Complete AI-powered automation system that transforms Premium Gastro into a tech
 
 ## 🚦 Quick Start
 
+### Prerequisites
+
+1. **Python 3.12+** installed
+2. **1Password CLI** (recommended for production) OR `.env` file (development)
+
+### Credential Setup
+
+This project supports two methods for managing credentials:
+
+#### Option 1: 1Password CLI (Recommended for Production)
+
+```bash
+# Install 1Password CLI
+brew install --cask 1password-cli  # macOS
+# Or download from: https://1password.com/downloads/command-line/
+
+# Sign in
+op signin
+
+# Create "AI" vault in 1Password and add credentials
+# The application will automatically load from 1Password
+```
+
+**Benefits:**
+- ✅ Centralized secret management
+- ✅ No secrets in code or `.env` files
+- ✅ Easy credential rotation
+- ✅ Team credential sharing
+- ✅ Audit trail via logging
+
+#### Option 2: .env File (Development/Testing)
+
+```bash
+# Copy example and fill in your values
+cp env.example .env
+
+# Edit .env with your credentials
+# The application automatically falls back to .env if 1Password not available
+```
+
+**Important:** The `.env` file is gitignored and should NEVER be committed.
+
+### Install Dependencies
+
+```bash
+pip install -r requirements.txt  # If requirements.txt exists
+# Or install individually:
+pip install python-dotenv requests pytest
+```
+
 ### App Navigation Agent (NEW - Phase 6)
 
 ```bash
