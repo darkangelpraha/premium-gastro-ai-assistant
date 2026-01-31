@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import logging
 from dataclasses import dataclass
+from utils.secrets_loader import load_secret
 
 @dataclass
 class EmailContext:
@@ -29,9 +30,19 @@ class MissiveAIAssistant:
     """Context-aware email assistant using Missive API"""
     
     def __init__(self):
-        # Missive API credentials (get from 1Password)
-        self.missive_token = os.getenv('MISSIVE_API_TOKEN')
-        self.missive_org = os.getenv('MISSIVE_ORG_ID')
+        # Missive API credentials - load from 1Password with .env fallback
+        self.missive_token = load_secret(
+            'MISSIVE_API_TOKEN',
+            vault='AI',
+            item_names=['Missive', 'Email'],
+            field_names=['MISSIVE_API_TOKEN', 'token', 'api_key', 'password']
+        )
+        self.missive_org = load_secret(
+            'MISSIVE_ORG_ID',
+            vault='AI',
+            item_names=['Missive', 'Email'],
+            field_names=['MISSIVE_ORG_ID', 'org_id', 'organization']
+        )
         
         # Missive API base
         self.api_base = "https://public-api.missiveapp.com/v1"
@@ -44,7 +55,12 @@ class MissiveAIAssistant:
         
         # Supabase intelligence database (40,803+ records)
         self.supabase_url = "https://lowgijppjapmetedkvjb.supabase.co"
-        self.supabase_key = os.getenv('SUPABASE_KEY')
+        self.supabase_key = load_secret(
+            'SUPABASE_KEY',
+            vault='AI',
+            item_names=['Supabase'],
+            field_names=['SUPABASE_KEY', 'api_key', 'service_key', 'password']
+        )
         self.supabase_headers = {
             'apikey': self.supabase_key,
             'Authorization': f'Bearer {self.supabase_key}',
