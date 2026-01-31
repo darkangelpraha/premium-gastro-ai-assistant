@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 import logging
 from typing import Dict, Any
+from utils.secrets_loader import load_secret
 
 def redact_sandbox_info(sandbox_info: Any) -> Any:
     """Return a shallow-copied sandbox_info with any phone number redacted.
@@ -59,8 +60,61 @@ class TwilioWhatsAppLindySetup:
         print("🔧 TWILIO + WHATSAPP + LINDY SETUP")
         print("=" * 50)
         
+        # Try loading from 1Password first, then .env, then prompt
         for key, description in required_creds.items():
-            value = os.getenv(key)
+            # First try 1Password with .env fallback
+            if key == 'TWILIO_SID':
+                value = load_secret(
+                    key,
+                    vault='AI',
+                    item_names=['Twilio', 'WhatsApp'],
+                    field_names=['TWILIO_SID', 'account_sid', 'sid', 'username'],
+                    required=False
+                )
+            elif key == 'TWILIO_AUTH_TOKEN':
+                value = load_secret(
+                    key,
+                    vault='AI',
+                    item_names=['Twilio', 'WhatsApp'],
+                    field_names=['TWILIO_AUTH_TOKEN', 'auth_token', 'token', 'password'],
+                    required=False
+                )
+            elif key == 'LINDY_API_KEY':
+                value = load_secret(
+                    key,
+                    vault='AI',
+                    item_names=['Lindy', 'Lindy AI'],
+                    field_names=['LINDY_API_KEY', 'api_key', 'key', 'password'],
+                    required=False
+                )
+            elif key == 'SUPABASE_URL':
+                value = load_secret(
+                    key,
+                    vault='AI',
+                    item_names=['Supabase'],
+                    field_names=['SUPABASE_URL', 'url', 'endpoint'],
+                    required=False
+                )
+            elif key == 'SUPABASE_KEY':
+                value = load_secret(
+                    key,
+                    vault='AI',
+                    item_names=['Supabase'],
+                    field_names=['SUPABASE_KEY', 'api_key', 'service_key', 'password'],
+                    required=False
+                )
+            elif key == 'WHATSAPP_PHONE':
+                value = load_secret(
+                    key,
+                    vault='AI',
+                    item_names=['Twilio', 'WhatsApp'],
+                    field_names=['WHATSAPP_PHONE', 'phone', 'number', 'phone_number'],
+                    required=False
+                )
+            else:
+                value = None
+            
+            # If not found in 1Password or .env, prompt user
             if not value:
                 value = input(f"Enter {description}: ").strip()
             credentials[key] = value

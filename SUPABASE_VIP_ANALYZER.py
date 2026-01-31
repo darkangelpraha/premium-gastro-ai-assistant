@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass
 from collections import defaultdict, Counter
 import re
+from utils.secrets_loader import load_secret
 
 @dataclass
 class VIPContact:
@@ -37,21 +38,31 @@ class SupabaseVIPAnalyzer:
     """Automated VIP contact and urgency pattern detection from Supabase data"""
     
     def __init__(self):
-        # Supabase credentials - load from environment variables
-        self.supabase_url = os.getenv('SUPABASE_URL', '')
-        self.supabase_key = os.getenv('SUPABASE_KEY', '')
+        # Supabase credentials - load from 1Password with .env fallback
+        self.supabase_url = load_secret(
+            'SUPABASE_URL',
+            vault='AI',
+            item_names=['Supabase', 'Premium Gastro'],
+            field_names=['SUPABASE_URL', 'url', 'endpoint']
+        )
+        self.supabase_key = load_secret(
+            'SUPABASE_KEY',
+            vault='AI',
+            item_names=['Supabase', 'Premium Gastro'],
+            field_names=['SUPABASE_KEY', 'api_key', 'service_key', 'password', 'secret']
+        )
         
-        # Validate required environment variables
-        if not self.supabase_url or 'your-project' in self.supabase_url or 'your_supabase' in self.supabase_url:
+        # Validate credentials
+        if 'your-project' in self.supabase_url or 'your_supabase' in self.supabase_url:
             raise ValueError(
-                "SUPABASE_URL environment variable is required and must be a valid URL. "
-                "Please set it in your .env file or environment."
+                "SUPABASE_URL must be a valid URL. "
+                "Please set it in 1Password or your .env file."
             )
         
-        if not self.supabase_key or 'your_supabase' in self.supabase_key or len(self.supabase_key) < 20:
+        if 'your_supabase' in self.supabase_key or len(self.supabase_key) < 20:
             raise ValueError(
-                "SUPABASE_KEY environment variable is required and must be a valid API key. "
-                "Please set it in your .env file or environment."
+                "SUPABASE_KEY must be a valid API key. "
+                "Please set it in 1Password or your .env file."
             )
         
         self.headers = {
