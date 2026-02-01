@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 import logging
 from typing import Dict, Any
+from utils.secrets_loader import load_secret
 
 def redact_sandbox_info(sandbox_info: Any) -> Any:
     """Return a shallow-copied sandbox_info with any phone number redacted.
@@ -46,23 +47,56 @@ class TwilioWhatsAppLindySetup:
         """Load or prompt for required credentials"""
         credentials = {}
         
-        # Required credentials for setup
-        required_creds = {
-            'TWILIO_SID': 'Twilio Account SID (AC...)',
-            'TWILIO_AUTH_TOKEN': 'Twilio Auth Token',
-            'LINDY_API_KEY': 'Lindy AI API Key',
-            'SUPABASE_URL': 'Supabase URL',
-            'SUPABASE_KEY': 'Supabase API Key',
-            'WHATSAPP_PHONE': 'WhatsApp Business Phone Number (+420...)'
+        # Required credentials for setup with their 1Password search configuration
+        credential_configs = {
+            'TWILIO_SID': {
+                'description': 'Twilio Account SID (AC...)',
+                'item_names': ['Twilio', 'WhatsApp'],
+                'field_names': ['TWILIO_SID', 'account_sid', 'sid', 'username']
+            },
+            'TWILIO_AUTH_TOKEN': {
+                'description': 'Twilio Auth Token',
+                'item_names': ['Twilio', 'WhatsApp'],
+                'field_names': ['TWILIO_AUTH_TOKEN', 'auth_token', 'token', 'password']
+            },
+            'LINDY_API_KEY': {
+                'description': 'Lindy AI API Key',
+                'item_names': ['Lindy', 'Lindy AI'],
+                'field_names': ['LINDY_API_KEY', 'api_key', 'key', 'password']
+            },
+            'SUPABASE_URL': {
+                'description': 'Supabase URL',
+                'item_names': ['Supabase'],
+                'field_names': ['SUPABASE_URL', 'url', 'endpoint']
+            },
+            'SUPABASE_KEY': {
+                'description': 'Supabase API Key',
+                'item_names': ['Supabase'],
+                'field_names': ['SUPABASE_KEY', 'api_key', 'service_key', 'password']
+            },
+            'WHATSAPP_PHONE': {
+                'description': 'WhatsApp Business Phone Number (+420...)',
+                'item_names': ['Twilio', 'WhatsApp'],
+                'field_names': ['WHATSAPP_PHONE', 'phone', 'number', 'phone_number']
+            }
         }
         
         print("🔧 TWILIO + WHATSAPP + LINDY SETUP")
         print("=" * 50)
         
-        for key, description in required_creds.items():
-            value = os.getenv(key)
+        # Try loading from 1Password with .env fallback, then prompt if not found
+        for key, config in credential_configs.items():
+            value = load_secret(
+                key,
+                vault='AI',
+                item_names=config['item_names'],
+                field_names=config['field_names'],
+                required=False
+            )
+            
+            # If not found in 1Password or .env, prompt user
             if not value:
-                value = input(f"Enter {description}: ").strip()
+                value = input(f"Enter {config['description']}: ").strip()
             credentials[key] = value
         
         return credentials

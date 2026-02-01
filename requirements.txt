@@ -1,0 +1,13 @@
+# Premium Gastro AI Assistant - Python Dependencies
+# Core dependencies for the automation ecosystem
+
+# API Client Libraries
+requests>=2.31.0
+aiohttp>=3.9.0
+
+# Environment and Configuration
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
