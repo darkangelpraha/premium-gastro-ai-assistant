@@ -7,6 +7,7 @@ Complete setup script for immediate WhatsApp Business automation
 import requests
 import json
 import os
+import base64
 from datetime import datetime
 import logging
 from typing import Dict, Any
@@ -101,7 +102,7 @@ class TwilioWhatsAppLindySetup:
         
         return credentials
     
-    async def step1_verify_twilio_connection(self) -> bool:
+    def step1_verify_twilio_connection(self) -> bool:
         """Step 1: Verify Twilio account and get sandbox info"""
         try:
             print("\n📱 STEP 1: Verifying Twilio Connection...")
@@ -109,7 +110,6 @@ class TwilioWhatsAppLindySetup:
             # Test Twilio connection
             url = f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials['TWILIO_SID']}.json"
             
-            import base64
             auth_header = base64.b64encode(
                 f"{self.credentials['TWILIO_SID']}:{self.credentials['TWILIO_AUTH_TOKEN']}".encode()
             ).decode()
@@ -153,7 +153,6 @@ class TwilioWhatsAppLindySetup:
         try:
             url = f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials['TWILIO_SID']}/Sandbox/IncomingPhoneNumbers.json"
             
-            import base64
             auth_header = base64.b64encode(
                 f"{self.credentials['TWILIO_SID']}:{self.credentials['TWILIO_AUTH_TOKEN']}".encode()
             ).decode()
@@ -181,7 +180,7 @@ class TwilioWhatsAppLindySetup:
             self.logger.error(f"Error getting sandbox info: {e}")
             return {}
     
-    async def step2_setup_lindy_integration(self) -> bool:
+    def step2_setup_lindy_integration(self) -> bool:
         """Step 2: Create Lindy AI agent for WhatsApp"""
         try:
             print("\n🤖 STEP 2: Setting up Lindy AI Integration...")
@@ -235,7 +234,7 @@ class TwilioWhatsAppLindySetup:
             print(f"   ❌ Error setting up Lindy: {e}")
             return False
     
-    async def step3_configure_webhooks(self) -> bool:
+    def step3_configure_webhooks(self) -> bool:
         """Step 3: Configure webhooks for real-time processing"""
         try:
             print("\n🔗 STEP 3: Configuring Webhooks...")
@@ -278,7 +277,7 @@ class TwilioWhatsAppLindySetup:
         except Exception as e:
             self.logger.error(f"Error configuring Twilio webhook: {e}")
     
-    async def step4_test_integration(self) -> bool:
+    def step4_test_integration(self) -> bool:
         """Step 4: Test the complete integration"""
         try:
             print("\n🧪 STEP 4: Testing Integration...")
@@ -316,7 +315,7 @@ class TwilioWhatsAppLindySetup:
             print(f"   ❌ Error testing integration: {e}")
             return False
     
-    async def step5_enable_learning_mode(self) -> bool:
+    def step5_enable_learning_mode(self) -> bool:
         """Step 5: Enable continuous learning and improvement"""
         try:
             print("\n🧠 STEP 5: Enabling AI Learning Mode...")
@@ -407,7 +406,7 @@ class TwilioWhatsAppLindySetup:
         
         print(f"\n💾 Configuration saved to: /tmp/whatsapp_setup_config.json")
 
-async def main():
+def main():
     """Run the complete 60-minute setup"""
     setup = TwilioWhatsAppLindySetup()
     
@@ -424,7 +423,7 @@ async def main():
     ]
     
     for i, step in enumerate(steps, 1):
-        success = await step()
+        success = step()
         if not success:
             print(f"\n❌ Setup failed at step {i}")
             print("Please check the errors above and try again")
@@ -435,5 +434,4 @@ async def main():
     setup.save_configuration()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
