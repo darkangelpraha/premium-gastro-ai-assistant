@@ -7,6 +7,7 @@ Analyzes 40,803+ Supabase records to automatically identify VIP contacts and urg
 import requests
 import json
 import os
+import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 import logging
@@ -121,7 +122,7 @@ class SupabaseVIPAnalyzer:
                     'order': 'created_at.desc'
                 }
                 
-                response = requests.get(url, headers=self.headers, params=params)
+                response = requests.get(url, headers=self.headers, params=params, timeout=30)
                 response.raise_for_status()
                 
                 batch = response.json()
@@ -149,7 +150,7 @@ class SupabaseVIPAnalyzer:
             url = f"{self.supabase_url}/rest/v1/contacts"
             params = {'select': '*', 'limit': 1000}
             
-            response = requests.get(url, headers=self.headers, params=params)
+            response = requests.get(url, headers=self.headers, params=params, timeout=30)
             if response.status_code == 200:
                 return response.json()
             else:
@@ -455,12 +456,14 @@ class SupabaseVIPAnalyzer:
         }
         
         # Save to files
-        with open('/tmp/vip_analysis_complete.json', 'w', encoding='utf-8') as f:
+        vip_file = os.path.join(tempfile.gettempdir(), 'vip_analysis_complete.json')
+        with open(vip_file, 'w', encoding='utf-8') as f:
             json.dump(export_data, f, indent=2, ensure_ascii=False)
         
         # Create immediate deployment script
         deployment_script = self._generate_deployment_script(vip_contacts[:10], rules)
-        with open('/tmp/deploy_email_intelligence.py', 'w') as f:
+        deploy_file = os.path.join(tempfile.gettempdir(), 'deploy_email_intelligence.py')
+        with open(deploy_file, 'w') as f:
             f.write(deployment_script)
         
         return export_data
