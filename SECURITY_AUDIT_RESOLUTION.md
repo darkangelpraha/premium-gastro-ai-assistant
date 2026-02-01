@@ -23,9 +23,9 @@
 **Fix:** Added 30-second timeout to all `requests.get()` calls.
 
 **Files Modified:**
-- `MISSIVE_AI_ASSISTANT.py` (line 89)
-- `SUPABASE_VIP_ANALYZER.py` (lines 124, 152)
-- `TWILIO_WHATSAPP_LINDY_SETUP.py` (lines 122, 161)
+- `MISSIVE_AI_ASSISTANT.py` (1 location)
+- `SUPABASE_VIP_ANALYZER.py` (2 locations)
+- `TWILIO_WHATSAPP_LINDY_SETUP.py` (2 locations)
 
 **Example:**
 ```python
@@ -41,10 +41,10 @@ response = requests.get(url, headers=headers, timeout=30)
 **Fix:** Used `tempfile.gettempdir()` for portable, secure temporary file paths.
 
 **Files Modified:**
-- `INTELLIGENT_EMAIL_PROCESSOR.py` (lines 67, 547)
-- `MISSIVE_AI_ASSISTANT.py` (line 518)
-- `SUPABASE_VIP_ANALYZER.py` (lines 458, 463)
-- `TWILIO_WHATSAPP_LINDY_SETUP.py` (line 404)
+- `INTELLIGENT_EMAIL_PROCESSOR.py` (2 locations)
+- `MISSIVE_AI_ASSISTANT.py` (1 location)
+- `SUPABASE_VIP_ANALYZER.py` (2 locations)
+- `TWILIO_WHATSAPP_LINDY_SETUP.py` (1 location)
 
 **Example:**
 ```python
