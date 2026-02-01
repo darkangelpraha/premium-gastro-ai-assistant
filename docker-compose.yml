@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Communication Hub UI - Your Control Center
   hub-ui:
