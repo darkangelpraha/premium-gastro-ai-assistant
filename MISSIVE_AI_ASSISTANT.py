@@ -7,6 +7,7 @@ Reads Gmail via Missive API, understands relationships, drafts intelligent respo
 import requests
 import json
 import os
+import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import logging
@@ -86,7 +87,7 @@ class MissiveAIAssistant:
                 'include': 'messages,participants'
             }
             
-            response = requests.get(conversations_url, headers=self.headers, params=params)
+            response = requests.get(conversations_url, headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             
             conversations_data = response.json()
@@ -515,10 +516,11 @@ def main():
             print()
     
     # Save responses for immediate use
-    with open('/tmp/email_responses.json', 'w') as f:
+    responses_file = os.path.join(tempfile.gettempdir(), 'email_responses.json')
+    with open(responses_file, 'w') as f:
         json.dump(responses, f, indent=2)
     
-    print(f"💾 All responses saved to: /tmp/email_responses.json")
+    print(f"💾 All responses saved to: {responses_file}")
     print(f"🎯 Ready for immediate deployment in Missive!")
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import requests
 import json
 import os
 import base64
+import tempfile
 from datetime import datetime
 import logging
 from typing import Dict, Any
@@ -119,7 +120,7 @@ class TwilioWhatsAppLindySetup:
                 'Content-Type': 'application/json'
             }
             
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 account_info = response.json()
@@ -158,7 +159,7 @@ class TwilioWhatsAppLindySetup:
             ).decode()
             
             headers = {'Authorization': f'Basic {auth_header}'}
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code == 200:
                 data = response.json()
@@ -401,10 +402,11 @@ class TwilioWhatsAppLindySetup:
             }
         }
         
-        with open('/tmp/whatsapp_setup_config.json', 'w') as f:
+        config_file = os.path.join(tempfile.gettempdir(), 'whatsapp_setup_config.json')
+        with open(config_file, 'w') as f:
             json.dump(config, f, indent=2)
         
-        print(f"\n💾 Configuration saved to: /tmp/whatsapp_setup_config.json")
+        print(f"\n💾 Configuration saved to: {config_file}")
 
 def main():
     """Run the complete 60-minute setup"""

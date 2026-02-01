@@ -7,6 +7,7 @@ Lindy AI processing + Missive integration.
 
 import json
 import os
+import tempfile
 from datetime import datetime
 from typing import Dict, List, Optional
 import logging
@@ -64,7 +65,7 @@ class IntelligentEmailProcessor:
     def load_vip_analysis(self):
         """Load the generated VIP analysis data"""
         try:
-            vip_file = '/tmp/vip_analysis_complete.json'
+            vip_file = os.path.join(tempfile.gettempdir(), 'vip_analysis_complete.json')
             with open(
                     vip_file, 'r', encoding='utf-8') as f:
                 self.vip_data = json.load(f)
@@ -544,11 +545,12 @@ def main():
 
     # Export rules
     rules = processor.export_processing_rules()
-    with open('/tmp/email_processing_rules.json', 'w') as f:
+    rules_file = os.path.join(tempfile.gettempdir(), 'email_processing_rules.json')
+    with open(rules_file, 'w') as f:
         json.dump(rules, f, indent=2)
 
     print("\n✅ Email processing complete!")
-    print("📁 Processing rules exported to: /tmp/email_processing_rules.json")
+    print(f"📁 Processing rules exported to: {rules_file}")
     print(f"🎯 VIP contacts loaded: {len(processor.vip_emails)}")
     print(f"🚨 Urgency keywords: {len(processor.urgency_keywords)}")
     print("\n🚀 READY FOR PRODUCTION EMAIL AUTOMATION!")
