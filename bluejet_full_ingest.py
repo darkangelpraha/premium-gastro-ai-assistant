@@ -87,7 +87,7 @@ BJ_TOKEN_HASH = get_1password_field(OP_ITEM_NAME, "BLUEJET_API_TOKEN_HASH")
 BJ_BASE_URL = get_1password_field(OP_ITEM_NAME, "BLUEJET_BASE_URL")
 
 logger.info(f"Successfully retrieved credentials for user: {BJ_USERNAME}")
-logger.info(f"Using BlueJet base URL: {BJ_BASE_URL}")
+logger.info("Using configured BlueJet base URL")
 
 # Qdrant configuration
 QDRANT_HOST = os.getenv("QDRANT_HOST", "192.168.1.129")
