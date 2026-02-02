@@ -11,13 +11,9 @@
 #
 name: "CodeQL Advanced"
 
+# Email notifications disabled - workflow runs only on manual trigger
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  schedule:
-    - cron: '44 8 * * 2'
+  workflow_dispatch:  # Manual trigger only - no automatic email notifications
 
 jobs:
   analyze:

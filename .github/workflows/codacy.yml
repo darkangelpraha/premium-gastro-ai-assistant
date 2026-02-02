@@ -1,4 +1,4 @@
-Hey!# This workflow uses actions that are not certified by GitHub.
+# This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
 # separate terms of service, privacy policy, and support
 # documentation.
@@ -13,14 +13,9 @@ Hey!# This workflow uses actions that are not certified by GitHub.
 
 name: Codacy Security Scan
 
+# Email notifications disabled - workflow runs only on manual trigger
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "main" ]
-  schedule:
-    - cron: '38 19 * * 3'
+  workflow_dispatch:  # Manual trigger only - no automatic email notifications
 
 permissions:
   contents: read

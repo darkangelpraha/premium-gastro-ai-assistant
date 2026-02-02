@@ -11,14 +11,9 @@
 # https://pypi.org/project/bandit/ is Apache v2.0 licensed, by PyCQA
 
 name: Bandit
+# Email notifications disabled - workflow runs only on manual trigger
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "main" ]
-  schedule:
-    - cron: '20 15 * * 2'
+  workflow_dispatch:  # Manual trigger only - no automatic email notifications
 
 jobs:
   bandit:
