@@ -129,11 +129,11 @@ class TwilioWhatsAppLindySetup:
                 # Get WhatsApp sandbox info
                 sandbox_info = self.get_whatsapp_sandbox_info()
                 if sandbox_info:
-                    # Use redaction helper to ensure no sensitive fields are exposed,
-                    # but avoid logging phone numbers altogether.
-                    redacted_info = redact_sandbox_info(sandbox_info)
-                    status = redacted_info.get('status', 'unknown')
+                    # Only log non-sensitive sandbox status information.
+                    status = sandbox_info.get('status', 'unknown')
                     print(f"   📱 WhatsApp sandbox status: {status}")
+
+
                 
                 self.setup_log.append("✅ Twilio connection verified")
                 return True
@@ -161,17 +161,18 @@ class TwilioWhatsAppLindySetup:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('incoming_phone_numbers'):
+                    # Do not propagate phone numbers or URLs to callers; only expose
+                    # non-sensitive status information.
                     sandbox = data['incoming_phone_numbers'][0]
                     return {
-                        'number': sandbox.get('phone_number'),
-                        'url': sandbox.get('voice_url'),
-                        'status': 'active'
+                        'status': 'active',
+                        'has_number': bool(sandbox.get('phone_number'))
                     }
+            # Fallback information when sandbox phone numbers are not available.
             
             return {
-                'number': '+1 415 523 8886',  # Default Twilio sandbox
-                'message': 'Send "join <sandbox-name>" to this number',
-                'status': 'setup_required'
+                'status': 'setup_required',
+                'has_number': False
             }
             
         except Exception as e:
