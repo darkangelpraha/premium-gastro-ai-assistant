@@ -1,0 +1,10 @@
+# Bandit configuration for Premium Gastro AI Assistant
+# Suppress false positives while maintaining security
+
+skips: ['B101', 'B105', 'B404', 'B603', 'B607']
+
+# B101: assert_used - pytest uses assert statements in tests (normal behavior)
+# B105: hardcoded_password_string - Test data in test files (not real passwords)
+# B404: blacklist (import subprocess) - subprocess module is needed and used safely
+# B603: subprocess_without_shell_equals_true - subprocess with list args is safe
+# B607: start_process_with_partial_path - 'op' CLI command is intentional for 1Password
