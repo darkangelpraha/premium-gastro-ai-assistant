@@ -161,9 +161,11 @@ cp env.example .env
 ### Install Dependencies
 
 ```bash
-pip install -r requirements.txt  # If requirements.txt exists
-# Or install individually:
-pip install python-dotenv requests pytest
+# Install all dependencies from requirements.txt (recommended)
+pip install -r requirements.txt
+
+# Or install core dependencies individually:
+pip install python-dotenv requests pytest pytest-asyncio aiohttp
 ```
 
 ### App Navigation Agent (NEW - Phase 6)
