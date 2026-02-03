@@ -199,20 +199,20 @@ class TwilioWhatsAppLindySetup:
                     {
                         "type": "whatsapp_message_received",
                         "platform": "twilio",
-                        "phone_number": self.credentials.get('WHATSAPP_PHONE')
+                        "phone_number": self.credentials.get('WHATSAPP_PHONE', '')
                     }
                 ],
                 "actions": [
                     {
                         "type": "analyze_with_supabase",
-                        "database_url": self.credentials.get('SUPABASE_URL'),
-                        "api_key": self.credentials.get('SUPABASE_KEY')
+                        "database_url": self.credentials.get('SUPABASE_URL', ''),
+                        "api_key": self.credentials.get('SUPABASE_KEY', '')
                     },
                     {
                         "type": "send_whatsapp_reply",
                         "platform": "twilio",
-                        "account_sid": self.credentials.get('TWILIO_SID'),
-                        "auth_token": self.credentials.get('TWILIO_AUTH_TOKEN')
+                        "account_sid": self.credentials.get('TWILIO_SID', ''),
+                        "auth_token": self.credentials.get('TWILIO_AUTH_TOKEN', '')
                     }
                 ],
                 "intelligence": {
@@ -253,7 +253,7 @@ class TwilioWhatsAppLindySetup:
                     "events": ["message.received", "message.sent", "delivery.status"]
                 },
                 "lindy_response": {
-                    "url": f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials.get('TWILIO_SID')}/Messages.json",
+                    "url": f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials.get('TWILIO_SID', '')}/Messages.json",
                     "method": "POST",
                     "authentication": "basic"
                 }
@@ -398,12 +398,12 @@ class TwilioWhatsAppLindySetup:
         """Save configuration for easy restoration"""
         config = {
             "setup_date": datetime.now().isoformat(),
-            "twilio_sid": self.credentials.get('TWILIO_SID'),
-            "whatsapp_phone": self.credentials.get('WHATSAPP_PHONE'),
+            "twilio_sid": self.credentials.get('TWILIO_SID', ''),
+            "whatsapp_phone": self.credentials.get('WHATSAPP_PHONE', ''),
             "setup_log": self.setup_log,
             "webhook_urls": {
                 "twilio_to_lindy": "https://api.lindy.ai/webhooks/twilio/whatsapp",
-                "lindy_to_twilio": f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials.get('TWILIO_SID')}/Messages.json"
+                "lindy_to_twilio": f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials.get('TWILIO_SID', '')}/Messages.json"
             }
         }
         
