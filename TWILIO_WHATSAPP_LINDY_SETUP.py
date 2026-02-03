@@ -111,11 +111,13 @@ class TwilioWhatsAppLindySetup:
         try:
             print("\n📱 STEP 1: Verifying Twilio Connection...")
             
-            # Test Twilio connection
-            url = f"https://api.twilio.com/2010-04-01/Accounts/{self.credentials.get('TWILIO_SID')}.json"
-            
+            # Get credentials safely
             sid = self.credentials.get('TWILIO_SID', '')
             token = self.credentials.get('TWILIO_AUTH_TOKEN', '')
+            
+            # Test Twilio connection
+            url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}.json"
+            
             auth_header = base64.b64encode(f"{sid}:{token}".encode()).decode()
             
             headers = {
