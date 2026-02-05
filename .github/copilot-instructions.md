@@ -606,8 +606,8 @@ Setup: `cp env.example .env` → Edit with real credentials (SUPABASE_URL, SUPAB
 
 ### Testing (ALWAYS run before changes)
 ```bash
-pip install pytest requests  # If needed
-python3 -m pytest tests/ -v  # 3 tests, ~0.08s, 100% pass expected
+pip install -r requirements.txt  # Install all dependencies including pytest-asyncio
+python3 -m pytest tests/ -v  # 47 tests, all should pass
 ```
 
 ### Running Python Scripts

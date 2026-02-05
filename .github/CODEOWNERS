@@ -1,0 +1,26 @@
+# CODEOWNERS file - Defines code ownership for automatic review requests
+# More info: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owner for all files
+* @darkangelpraha
+
+# Python scripts
+*.py @darkangelpraha
+
+# Security-sensitive files
+SECURITY*.md @darkangelpraha
+*SECURITY*.py @darkangelpraha
+env.example @darkangelpraha
+
+# GitHub workflows and CI/CD
+.github/ @darkangelpraha
+
+# Documentation
+*.md @darkangelpraha
+
+# Phase 6 workflows
+phase6_workflows/ @darkangelpraha
+
+# Docker configuration
+docker-compose.yml @darkangelpraha
+Dockerfile* @darkangelpraha
