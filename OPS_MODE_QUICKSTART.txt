@@ -1,0 +1,23 @@
+OPS MODE QUICKSTART
+
+Purpose
+This repo stores the canonical Premium Gastro Ops Mode system prompt and the editor snippet that inserts the Session Header grid.
+
+Files in this repo
+OPS_MODE_SYSTEM_PROMPT.txt
+OPS_MODE_SESSION_HEADER_SNIPPET.code-snippets
+
+Installed snippet locations on macOS
+VS Code user snippets
+~/Library/Application Support/Code/User/snippets/premium-gastro-session-header.code-snippets
+
+Cursor user snippets
+~/Library/Application Support/Cursor/User/snippets/premium-gastro-session-header.code-snippets
+
+Usage
+In VS Code or Cursor, type /head then press Tab to insert the Session Header grid.
+In chat apps, send /head and the assistant should respond with the grid because of the Session Header gate rule.
+
+Restore
+If the snippet files disappear, copy OPS_MODE_SESSION_HEADER_SNIPPET.code-snippets from this repo into the installed snippet locations above.
+

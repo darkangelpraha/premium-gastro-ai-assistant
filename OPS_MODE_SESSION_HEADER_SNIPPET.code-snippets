@@ -1,0 +1,24 @@
+{
+  "PG Session Header Grid": {
+    "prefix": [
+      "/head",
+      "/header",
+      "/sessionheader",
+      "pghead",
+      "head",
+      "header"
+    ],
+    "body": [
+      "<SESSION_HEADER>",
+      "TASK: ${1}",
+      "SCOPE: ${2}",
+      "DONE: ${3}",
+      "NONNEGOTIABLES: zero data loss, zadne mazani uzivatelskych souboru, zadne secrets v chatu koda a gitu, zadne experimenty, kazdy krok overen, kazda odchylka od zadani predem schvalena, prubezna digital hygiene",
+      "ANCHORS: Notion Tech Stack DB: <PLACEHOLDER>, NAS smb://192.168.1.129 (vseved), Qdrant NAS http://192.168.1.129:6333, Docker Mac je Docker na Macu, Docker NAS je Docker na Synology NAS, sluzby vzdy s kontextem Mac nebo NAS",
+      "EVIDENCE: ${4}",
+      "</SESSION_HEADER>"
+    ],
+    "description": "Premium Gastro session header grid"
+  }
+}
+
