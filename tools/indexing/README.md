@@ -26,7 +26,9 @@ export QDRANT_COLLECTION="dropbox_semantic_v2"
 export QDRANT_EMBEDDING_PROVIDER="ollama"   # or openai
 export OLLAMA_MODEL="nomic-embed-text"
 
-python3 tools/indexing/index_dropbox_qdrant.py   "$HOME/Library/CloudStorage/Dropbox"   "$HOME/Library/CloudStorage/Dropbox (Backup)"
+python3 tools/indexing/index_dropbox_qdrant.py \
+  "$HOME/Library/CloudStorage/Dropbox" \
+  "$HOME/Library/CloudStorage/Dropbox (Backup)"
 ```
 
 ### Important env vars
@@ -40,6 +42,8 @@ python3 tools/indexing/index_dropbox_qdrant.py   "$HOME/Library/CloudStorage/Dro
 - `QDRANT_MAX_CHUNKS_PER_FILE`: cap points per file.
 - `QDRANT_DEDUP_FILES`: 1/0 for cross-root file dedup.
 - `QDRANT_DEDUP_EMBEDDINGS`: 1/0 for embedding cache.
+- `INDEX_HTTP_CONNECT_TIMEOUT`, `INDEX_HTTP_MAX_TIME`: curl timeouts (seconds).
+- `INDEX_HTTP_RETRIES`, `INDEX_HTTP_RETRY_SLEEP_SECONDS`: retry policy for transient network failures.
 
 ## Full Filesystem Map (Inventory)
 Script: `tools/indexing/full_fs_map.py`
