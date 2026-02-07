@@ -936,32 +936,35 @@ def extract_xlsx_text_ooxml(path: Path, max_cells: int) -> str:
 
             out_lines: List[str] = []
             cells = 0
+
+            class _Stop(Exception):
+                pass
+
             for ws in ws_files:
                 if cells >= max_cells:
                     break
                 try:
-                    ws_xml = z.read(ws)
-                except Exception:
-                    continue
-                try:
-                    root = ET.fromstring(ws_xml)
-                except Exception:
-                    continue
-                for row in root.iter(ns + "row"):
-                    if cells >= max_cells:
-                        break
-                    row_parts: List[str] = []
-                    for c in row.iter(ns + "c"):
-                        val = cell_value(c)
-                        if val:
-                            row_parts.append(val)
-                            cells += 1
+                    with z.open(ws) as f:
+                        for _ev, elem in ET.iterparse(f, events=("end",)):
+                            if elem.tag != ns + "row":
+                                continue
                             if cells >= max_cells:
-                                break
-                    if row_parts:
-                        out_lines.append("\t".join(row_parts))
-                # Avoid holding the full tree for very large sheets.
-                root.clear()
+                                raise _Stop()
+                            row_parts: List[str] = []
+                            for c in elem.iter(ns + "c"):
+                                val = cell_value(c)
+                                if val:
+                                    row_parts.append(val)
+                                    cells += 1
+                                    if cells >= max_cells:
+                                        break
+                            if row_parts:
+                                out_lines.append("\t".join(row_parts))
+                            elem.clear()
+                except _Stop:
+                    break
+                except Exception:
+                    continue
             return "\n".join(out_lines)
     except Exception:
         return ""
