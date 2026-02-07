@@ -1065,6 +1065,9 @@ def create_payload_indexes() -> None:
         ("path", "keyword", False),
         ("name", "keyword", False),
         ("source", "keyword", False),
+        ("text_source", "keyword", False),
+        ("chunk_index", "integer", False),
+        ("chunk_total", "integer", False),
         ("mtime", "integer", MTIME_IS_PRINCIPAL),
     ]
     for field, schema_type, principal in items:
