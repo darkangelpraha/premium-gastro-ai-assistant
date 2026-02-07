@@ -395,7 +395,15 @@ def count_files(roots: List[str]) -> int:
 def ensure_state_db() -> sqlite3.Connection:
     db_path = Path(STATE_DB)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    # WAL + busy_timeout makes the DB far more resilient to transient locking (e.g., restarts).
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA busy_timeout=30000")
+    except Exception:
+        pass
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS file_state (
@@ -989,6 +997,8 @@ def main() -> int:
                 last_err = vec_errs[idx] or last_err or "embedding_failed"
                 continue
             pid = str(uuid.UUID(hex=hashlib.md5(f"{path}::{idx}".encode("utf-8")).hexdigest()))
+            # Hash the exact text sent for embeddings (after clamping) so the payload reflects reality.
+            chunk_for_embed = clamp_embedding_text(chunk)
             payload = {
                 "path": str(path),
                 "name": path.name,
@@ -997,7 +1007,7 @@ def main() -> int:
                 "source": "dropbox",
                 "chunk_index": idx,
                 "chunk_total": len(chunks),
-                "text_hash": text_hash(chunk),
+                "text_hash": text_hash(chunk_for_embed),
             }
             file_points.append({"id": pid, "vector": vec, "payload": payload})
             points_indexed += 1
