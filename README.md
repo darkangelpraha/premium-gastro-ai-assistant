@@ -233,3 +233,58 @@ Built for Premium Gastro by AI automation specialists.
 - **2025-10-09**: Complete masterplan and roadmap created
 - **2025-10-09**: Research completed for all 6 phases
 - **2025-10-09**: GitHub repository established
+
+---
+
+## ✅ Indexing Methodology (Do / Don't + Lessons Learned)
+
+**Purpose:** Build a reliable semantic indexing pipeline (filesystem → embeddings → vector DB) with auditability and zero silent failures.
+
+### ✅ Do (Correct Method)
+- **Validate embeddings first**: run a 1‑request embedding call and verify a numeric vector is returned.
+- **Auto‑detect vector size** from the embedding model and **create the collection with that exact size**.
+- **Use valid IDs**: UUID or 64‑bit integer. Deterministic UUID (e.g., UUID from md5 of path) is safe for re‑runs.
+- **Use the correct Qdrant upsert contract**:  
+  `PUT /collections/{name}/points?wait=true` with:
+  ```json
+  {
+    "points": [
+      {"id": "<uuid>", "vector": [..], "payload": {"path": "...", "name": "...", "size": 123, "mtime": 1700000000}}
+    ]
+  }
+  ```
+- **Keep batches small and auditable** (e.g., 16–64 points per batch).
+- **Write an audit log** per batch (`batch_id`, `count`, `first_path`, `last_path`, `status`, `timestamp`).
+- **Log start + totals** (`total_files`, provider, collection) and final summary.
+- **Use a reliable background runner** (LaunchAgent/systemd) for long runs.
+- **Index non‑text safely**: use filename/metadata only; cap bytes for large text files.
+
+### ❌ Don’t (Common Failure Modes)
+- **Don’t** `POST /points` with record format if the server expects batch format — it will reject silently or with confusing errors.
+- **Don’t** use arbitrary string IDs (Qdrant requires UUID or uint64).
+- **Don’t** hard‑code versioned schema paths (breaks after extension updates).
+- **Don’t** rely on fragile background methods (`nohup`) where the OS kills jobs.
+- **Don’t** embed binary blobs or huge files without size caps.
+
+### ✅ Minimal Payload Standard
+- `path` (string), `name` (string), `size` (int), `mtime` (int), `source` (string)
+- **Never** include secrets or raw file contents in logs.
+
+### ✅ Verification Checklist
+- `points_count` increases after a 1‑file smoke test.
+- Audit log contains successful batches with increasing `batch_id`.
+- Final count matches expectations (or is explainable by filtered/skipped files).
+
+### ✅ Security & Privacy Hygiene
+- Store tokens in OS keychain or env only.
+- Keep logs metadata‑only.
+- Never commit `.env` or secrets.
+
+### Lessons Learned (Core)
+- **APIs must be validated against the running version** (contract drift is real).
+- **Correct upsert format + valid IDs** is the difference between “running” and “actually indexing.”
+- **Background reliability is part of correctness.**
+
+**Last updated:** 2026-02-07
+
+**Canonical scripts:** `tools/indexing/`
