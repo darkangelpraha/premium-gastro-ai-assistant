@@ -70,6 +70,11 @@ TEXT_EXTS = {
     ".log", ".ini", ".conf", ".toml", ".xml", ".html", ".htm",
 }
 
+HTTP_CONNECT_TIMEOUT = float(os.environ.get("INDEX_HTTP_CONNECT_TIMEOUT", "3"))
+HTTP_MAX_TIME = float(os.environ.get("INDEX_HTTP_MAX_TIME", "60"))
+HTTP_RETRIES = int(os.environ.get("INDEX_HTTP_RETRIES", "2"))
+HTTP_RETRY_SLEEP_SECONDS = float(os.environ.get("INDEX_HTTP_RETRY_SLEEP_SECONDS", "1"))
+
 
 def log(msg: str) -> None:
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -79,7 +84,19 @@ def log(msg: str) -> None:
 
 
 def http_json(method: str, url: str, payload: Any = None, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    cmd = ["curl", "-sS", "-X", method, url, "-H", "Content-Type: application/json"]
+    cmd = [
+        "curl",
+        "-sS",
+        "--connect-timeout",
+        str(HTTP_CONNECT_TIMEOUT),
+        "--max-time",
+        str(HTTP_MAX_TIME),
+        "-X",
+        method,
+        url,
+        "-H",
+        "Content-Type: application/json",
+    ]
     if headers:
         for k, v in headers.items():
             cmd += ["-H", f"{k}: {v}"]
@@ -87,22 +104,48 @@ def http_json(method: str, url: str, payload: Any = None, headers: Optional[Dict
     if payload is not None:
         data = json.dumps(payload)
         cmd += ["--data-binary", "@-"]
-    res = subprocess.run(cmd, input=data, capture_output=True, text=True)
-    if res.returncode != 0:
-        raise RuntimeError(res.stderr.strip() or res.stdout.strip())
-    out = res.stdout.strip()
-    return json.loads(out) if out else {}
+    last_err = ""
+    for attempt in range(HTTP_RETRIES + 1):
+        res = subprocess.run(cmd, input=data, capture_output=True, text=True)
+        if res.returncode == 0:
+            out = res.stdout.strip()
+            return json.loads(out) if out else {}
+        last_err = (res.stderr.strip() or res.stdout.strip() or "curl failed").strip()
+        retryable = any(
+            s in last_err.lower()
+            for s in (
+                "failed to connect",
+                "couldn't connect",
+                "connection refused",
+                "timed out",
+                "empty reply",
+                "connection reset",
+            )
+        )
+        if attempt < HTTP_RETRIES and retryable:
+            time.sleep(HTTP_RETRY_SLEEP_SECONDS * (attempt + 1))
+            continue
+        break
+    raise RuntimeError(last_err)
+
+
+def qdrant_check(res: Dict[str, Any]) -> Dict[str, Any]:
+    status = res.get("status")
+    if status and status != "ok":
+        msg = res.get("message") or res.get("result") or str(res)
+        raise RuntimeError(f"Qdrant error: {msg}")
+    return res
 
 
 def qdrant_get(path: str) -> Dict[str, Any]:
-    return http_json("GET", QDRANT_URL + path)
+    return qdrant_check(http_json("GET", QDRANT_URL + path))
 
 
 def qdrant_put(path: str, payload: Any) -> Dict[str, Any]:
-    return http_json("PUT", QDRANT_URL + path, payload)
+    return qdrant_check(http_json("PUT", QDRANT_URL + path, payload))
 
 def qdrant_post(path: str, payload: Any) -> Dict[str, Any]:
-    return http_json("POST", QDRANT_URL + path, payload)
+    return qdrant_check(http_json("POST", QDRANT_URL + path, payload))
 
 
 def collection_exists(name: str) -> bool:
@@ -124,7 +167,7 @@ def ensure_collection(name: str) -> None:
                     f"Collection '{name}' exists with size {size}, expected {VECTOR_SIZE}. "
                     f"Set QDRANT_COLLECTION to a new name."
                 )
-        except Exception as e:
+        except Exception:
             raise
         return
     payload = {
@@ -134,32 +177,6 @@ def ensure_collection(name: str) -> None:
         }
     }
     qdrant_put(f"/collections/{name}", payload)
-
-
-def tokenize(text: str) -> Iterable[str]:
-    word = []
-    for ch in text:
-        if ch.isalnum():
-            word.append(ch.lower())
-        else:
-            if word:
-                yield "".join(word)
-                word = []
-    if word:
-        yield "".join(word)
-
-
-def hash_vector(text: str) -> List[float]:
-    vec = [0.0] * VECTOR_SIZE
-    for tok in tokenize(text):
-        h = hashlib.md5(tok.encode("utf-8")).digest()
-        idx = int.from_bytes(h[:4], "big") % VECTOR_SIZE
-        vec[idx] += 1.0
-    # L2 normalize
-    norm = sum(v * v for v in vec) ** 0.5
-    if norm > 0:
-        vec = [v / norm for v in vec]
-    return vec
 
 
 def embed_text_openai(text: str) -> List[float]:
@@ -190,7 +207,7 @@ def choose_provider() -> str:
     return "ollama"
 
 
-def read_text(path: Path) -> Tuple[str, int]:
+def read_text(path: Path, max_chars: Optional[int] = None) -> Tuple[str, int]:
     try:
         with path.open("rb") as f:
             data = f.read(MAX_BYTES)
@@ -200,8 +217,9 @@ def read_text(path: Path) -> Tuple[str, int]:
         text = data.decode("utf-8", errors="ignore")
     except Exception:
         text = ""
-    if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
+    budget = MAX_CHARS if max_chars is None else max(0, int(max_chars))
+    if budget and len(text) > budget:
+        text = text[:budget]
     return text, len(data)
 
 
@@ -359,17 +377,31 @@ def compute_file_sig(path: Path, size: int) -> str:
         return ""
 
 
-def get_sig_canonical(conn: sqlite3.Connection, sig: str) -> Optional[str]:
+def upsert_sig_canonical(conn: sqlite3.Connection, sig: str, path: str) -> Optional[str]:
+    now = int(time.time())
     cur = conn.execute("SELECT path FROM content_sig WHERE sig = ?", (sig,))
     row = cur.fetchone()
-    return row[0] if row else None
+    if not row:
+        conn.execute(
+            "INSERT INTO content_sig (sig, path, seen_at) VALUES (?, ?, ?)",
+            (sig, path, now),
+        )
+        return None
 
+    canonical = row[0]
+    if canonical == path:
+        conn.execute("UPDATE content_sig SET seen_at = ? WHERE sig = ?", (now, sig))
+        return canonical
 
-def set_sig_canonical(conn: sqlite3.Connection, sig: str, path: str) -> None:
-    conn.execute(
-        "INSERT OR IGNORE INTO content_sig (sig, path, seen_at) VALUES (?, ?, ?)",
-        (sig, path, int(time.time())),
-    )
+    if not os.path.exists(canonical):
+        conn.execute(
+            "UPDATE content_sig SET path = ?, seen_at = ? WHERE sig = ?",
+            (path, now, sig),
+        )
+        return None
+
+    conn.execute("UPDATE content_sig SET seen_at = ? WHERE sig = ?", (now, sig))
+    return canonical
 
 
 def text_hash(text: str) -> str:
@@ -392,11 +424,12 @@ def chunk_text(text: str) -> List[str]:
 
 def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
     max_chunks = max(1, MAX_CHUNKS_PER_FILE)
+    budget_chars = max(MAX_CHARS, CHUNK_SIZE * max_chunks)
 
     # Text files (large-file aware)
     if is_text_file(path):
         if stat.st_size <= MAX_BYTES:
-            text, _ = read_text(path)
+            text, _ = read_text(path, max_chars=budget_chars)
             return chunk_text(text)[:max_chunks]
 
         # Sample evenly across the file; total bytes read stays bounded by MAX_BYTES.
@@ -434,7 +467,7 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
                 for i in idxs:
                     parts.append((pdf.pages[i].extract_text() or ""))
             text = "\n".join(parts)
-            return chunk_text(text[:MAX_CHARS])[:max_chunks] if text else [path.name]
+            return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
         except Exception:
             try:
                 from pypdf import PdfReader  # type: ignore
@@ -444,7 +477,7 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
                 for i in idxs:
                     parts.append((reader.pages[i].extract_text() or ""))
                 text = "\n".join(parts)
-                return chunk_text(text[:MAX_CHARS])[:max_chunks] if text else [path.name]
+                return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
             except Exception:
                 return [path.name]
 
@@ -454,7 +487,7 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
             import docx  # type: ignore
             doc = docx.Document(str(path))
             text = "\n".join([p.text for p in doc.paragraphs if p.text])
-            return chunk_text(text[:MAX_CHARS])[:max_chunks] if text else [path.name]
+            return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
         except Exception:
             return [path.name]
 
@@ -473,7 +506,8 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
                         break
                 if cells >= XLSX_MAX_CELLS:
                     break
-            return "\n".join(parts)[:MAX_CHARS]
+            text = "\n".join(parts)
+            return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
         except Exception:
             return [path.name]
 
@@ -643,7 +677,7 @@ def main() -> int:
         if DEDUP_FILES:
             sig = compute_file_sig(path, stat.st_size)
             if sig:
-                canonical = get_sig_canonical(conn, sig)
+                canonical = upsert_sig_canonical(conn, sig, str(path))
                 if canonical and canonical != str(path):
                     # ensure duplicates do not linger from previous runs
                     delete_points_for_path(str(path))
@@ -671,7 +705,6 @@ def main() -> int:
                     except Exception:
                         pass
                     continue
-                set_sig_canonical(conn, sig, str(path))
 
         chunks = extract_chunks(path, stat)
         if not chunks:
