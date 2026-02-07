@@ -1,0 +1,5 @@
+# Sample evaluation queries (JSONL)
+# Fill these with your real-world questions and expected hints.
+{"query":"invoice 2024","expect_any":["Invoices/2024"],"k":10}
+{"query":"dropbox backup qdrant","expect_any":["dropbox"],"k":10}
+{"query":"synology ds423 quickconnect","expect_any":["Synology","QuickConnect"],"k":10}

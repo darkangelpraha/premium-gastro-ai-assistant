@@ -8,13 +8,17 @@ import mimetypes
 import subprocess
 import uuid
 import sqlite3
+import shutil
+import zipfile
+from io import BytesIO
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable, Tuple, Dict, Any, List, Optional
 from urllib.parse import urlencode
+from xml.etree import ElementTree as ET
 
-INDEXER_VERSION = "2026-02-07.ollama-embed-batch-state-v3"
+INDEXER_VERSION = "2026-02-07.ollama-embed-batch-state-v4-snippets-ocr-ooxml"
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY") or os.environ.get("QDRANT_APIKEY")
@@ -47,6 +51,25 @@ STATE_DB = os.environ.get(
     "QDRANT_STATE_DB",
     str(Path.cwd() / ".cache" / "qdrant_dropbox_state.sqlite"),
 )
+
+SNIPPETS_ENABLED = os.environ.get("QDRANT_SNIPPETS_ENABLED", "1") != "0"
+SNIPPETS_DB = os.environ.get(
+    "QDRANT_SNIPPETS_DB",
+    str(Path.cwd() / ".cache" / "qdrant_dropbox_snippets.sqlite"),
+)
+SNIPPET_MAX_CHARS = int(os.environ.get("QDRANT_SNIPPET_MAX_CHARS", "800"))  # 0 = store full text (not recommended)
+SNIPPETS_FTS = os.environ.get("QDRANT_SNIPPETS_FTS", "1") != "0"
+PAYLOAD_PREVIEW_MAX_CHARS = int(os.environ.get("QDRANT_PAYLOAD_PREVIEW_MAX_CHARS", "400"))  # 0 = store full chunk text
+
+OCR_SIDECAR_DIR = os.environ.get(
+    "QDRANT_OCR_SIDECAR_DIR",
+    str(Path.cwd() / ".cache" / "ocr_sidecars"),
+)
+OCR_PDF_MIN_TEXT_CHARS = int(os.environ.get("QDRANT_OCR_PDF_MIN_TEXT_CHARS", "200"))
+
+QDRANT_OP_RETRIES = int(os.environ.get("QDRANT_OP_RETRIES", "10"))
+QDRANT_OP_RETRY_SLEEP_SECONDS = float(os.environ.get("QDRANT_OP_RETRY_SLEEP_SECONDS", "2"))
+QDRANT_OP_MAX_SLEEP_SECONDS = float(os.environ.get("QDRANT_OP_MAX_SLEEP_SECONDS", "60"))
 EXCLUDE_DIR_NAMES = {
     s.strip()
     for s in os.environ.get("QDRANT_EXCLUDE_DIRS", ".dropbox.cache,.git,.hg,.svn,node_modules,.venv").split(",")
@@ -337,6 +360,79 @@ def page_sample_indices(total_pages: int, max_pages: int) -> List[int]:
     return out
 
 
+def indices_to_ranges(pages_1based: List[int]) -> List[Tuple[int, int]]:
+    if not pages_1based:
+        return []
+    pages = sorted(set(int(p) for p in pages_1based if int(p) > 0))
+    ranges: List[Tuple[int, int]] = []
+    start = pages[0]
+    end = pages[0]
+    for p in pages[1:]:
+        if p == end + 1:
+            end = p
+            continue
+        ranges.append((start, end))
+        start = p
+        end = p
+    ranges.append((start, end))
+    return ranges
+
+
+def cmd_exists(name: str) -> bool:
+    try:
+        return shutil.which(name) is not None
+    except Exception:
+        return False
+
+
+def pdf_page_count(path: Path) -> int:
+    if not cmd_exists("pdfinfo"):
+        return 0
+    try:
+        res = subprocess.run(
+            ["pdfinfo", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        out = (res.stdout or "") + "\n" + (res.stderr or "")
+        for line in out.splitlines():
+            if line.lower().startswith("pages:"):
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    return int(parts[1].strip())
+    except Exception:
+        return 0
+    return 0
+
+
+def extract_pdf_text_pdftotext(path: Path, max_pages: int) -> str:
+    if not cmd_exists("pdftotext"):
+        return ""
+    pages = pdf_page_count(path)
+    if pages <= 0:
+        # pdftotext still might work, but prefer bounded work.
+        pages = 1
+    idxs0 = page_sample_indices(pages, max_pages)
+    pages_1based = [i + 1 for i in idxs0]
+    ranges = indices_to_ranges(pages_1based)
+    parts: List[str] = []
+    for start, end in ranges:
+        try:
+            res = subprocess.run(
+                ["pdftotext", "-f", str(start), "-l", str(end), "-layout", "-nopgbrk", str(path), "-"],
+                check=False,
+                capture_output=True,
+                timeout=60,
+            )
+            if res.stdout:
+                parts.append(res.stdout.decode("utf-8", errors="ignore"))
+        except Exception:
+            continue
+    return "\n".join(parts)
+
+
 def chunks_fingerprint(chunks: List[str]) -> str:
     h = hashlib.sha256()
     for c in chunks:
@@ -371,10 +467,32 @@ def upsert_batch(points: List[Dict[str, Any]]) -> None:
     if not points:
         return
     payload = {"points": points}
-    qdrant_put(
-        f"/collections/{COLLECTION}/points{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
-        payload,
-    )
+    last_err = ""
+    for attempt in range(QDRANT_OP_RETRIES + 1):
+        try:
+            qdrant_put(
+                f"/collections/{COLLECTION}/points{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
+                payload,
+            )
+            return
+        except Exception as e:
+            last_err = str(e)
+            retryable = any(
+                s in last_err.lower()
+                for s in (
+                    "failed to connect",
+                    "couldn't connect",
+                    "connection refused",
+                    "timed out",
+                    "empty reply",
+                    "connection reset",
+                )
+            )
+            if attempt < QDRANT_OP_RETRIES and retryable:
+                sleep_s = min(QDRANT_OP_RETRY_SLEEP_SECONDS * (attempt + 1), QDRANT_OP_MAX_SLEEP_SECONDS)
+                time.sleep(sleep_s)
+                continue
+            raise RuntimeError(last_err) from e
 
 
 def count_files(roots: List[str]) -> int:
@@ -410,6 +528,8 @@ def ensure_state_db() -> sqlite3.Connection:
             path TEXT PRIMARY KEY,
             size INTEGER,
             mtime INTEGER,
+            aux_mtime INTEGER,
+            aux_size INTEGER,
             cfg_hash TEXT,
             complete INTEGER DEFAULT 1,
             text_hash TEXT,
@@ -435,6 +555,20 @@ def ensure_state_db() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ocr_queue (
+            path TEXT PRIMARY KEY,
+            ext TEXT,
+            size INTEGER,
+            mtime INTEGER,
+            status TEXT,
+            attempts INTEGER,
+            last_error TEXT,
+            updated_at INTEGER
+        )
+        """
+    )
     # Backward-compatible schema upgrades.
     cols = {r[1] for r in conn.execute("PRAGMA table_info(file_state)")}
     if "cfg_hash" not in cols:
@@ -443,23 +577,218 @@ def ensure_state_db() -> sqlite3.Connection:
         conn.execute("ALTER TABLE file_state ADD COLUMN complete INTEGER DEFAULT 1")
     if "last_error" not in cols:
         conn.execute("ALTER TABLE file_state ADD COLUMN last_error TEXT")
+    if "aux_mtime" not in cols:
+        conn.execute("ALTER TABLE file_state ADD COLUMN aux_mtime INTEGER")
+    if "aux_size" not in cols:
+        conn.execute("ALTER TABLE file_state ADD COLUMN aux_size INTEGER")
     conn.commit()
+    try:
+        os.chmod(str(db_path), 0o600)
+    except Exception:
+        pass
     return conn
 
 
-def get_state(conn: sqlite3.Connection, path: str) -> Optional[Tuple[int, int, Optional[str], int]]:
+def ensure_snippets_db() -> Optional[sqlite3.Connection]:
+    if not SNIPPETS_ENABLED:
+        return None
+    db_path = Path(SNIPPETS_DB)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA busy_timeout=30000")
+    except Exception:
+        pass
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chunks (
+            point_id TEXT PRIMARY KEY,
+            path TEXT,
+            chunk_index INTEGER,
+            chunk_total INTEGER,
+            mtime INTEGER,
+            size INTEGER,
+            source TEXT,
+            cfg_hash TEXT,
+            text_hash TEXT,
+            text TEXT,
+            updated_at INTEGER
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path)")
+
+    if SNIPPETS_FTS:
+        conn.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                text,
+                content='chunks',
+                content_rowid='rowid',
+                tokenize='unicode61'
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+              INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+            END;
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+              INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+            END;
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+              INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+              INSERT INTO chunks_fts(rowid, text) VALUES (new.rowid, new.text);
+            END;
+            """
+        )
+
+    conn.commit()
+    try:
+        os.chmod(str(db_path), 0o600)
+    except Exception:
+        pass
+    return conn
+
+
+def delete_snippets_for_path(conn: Optional[sqlite3.Connection], path: str) -> None:
+    if conn is None:
+        return
+    try:
+        conn.execute("DELETE FROM chunks WHERE path = ?", (path,))
+    except Exception as e:
+        log(f"snippets_delete_error path={path} err={e}")
+
+
+def upsert_snippets(conn: Optional[sqlite3.Connection], rows: List[Tuple[Any, ...]]) -> None:
+    if conn is None or not rows:
+        return
+    try:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO chunks
+              (point_id, path, chunk_index, chunk_total, mtime, size, source, cfg_hash, text_hash, text, updated_at)
+            VALUES
+              (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+    except Exception as e:
+        log(f"snippets_upsert_error err={e}")
+
+
+def delete_snippets_stale(conn: Optional[sqlite3.Connection], path: str, min_chunk_index: int) -> None:
+    if conn is None:
+        return
+    try:
+        conn.execute("DELETE FROM chunks WHERE path = ? AND chunk_index >= ?", (path, int(min_chunk_index)))
+    except Exception as e:
+        log(f"snippets_delete_stale_error path={path} err={e}")
+
+
+def ocr_sidecar_path(path: Path) -> Path:
+    h = hashlib.sha256(str(path).encode("utf-8", errors="ignore")).hexdigest()
+    return Path(OCR_SIDECAR_DIR) / f"{h}.txt"
+
+
+def ocr_sidecar_stat(path: Path) -> Tuple[int, int]:
+    sp = ocr_sidecar_path(path)
+    try:
+        st = sp.stat()
+        return int(st.st_mtime), int(st.st_size)
+    except Exception:
+        return 0, 0
+
+
+def read_ocr_sidecar(path: Path, max_chars: int) -> str:
+    sp = ocr_sidecar_path(path)
+    try:
+        data = sp.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    if max_chars > 0 and len(data) > max_chars:
+        return data[:max_chars]
+    return data
+
+
+IMAGE_EXTS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".gif",
+    ".webp",
+    ".heic",
+    ".heif",
+}
+
+
+def is_image_file(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_EXTS
+
+
+def enqueue_ocr(conn: sqlite3.Connection, path: Path, stat: os.stat_result, reason: str) -> None:
+    p = str(path)
+    ext = path.suffix.lower()
+    now = int(time.time())
+    try:
+        row = conn.execute("SELECT status, size, mtime FROM ocr_queue WHERE path = ?", (p,)).fetchone()
+        if row and (row[0] or "") == "done" and int(row[1] or 0) == int(stat.st_size) and int(row[2] or 0) == int(stat.st_mtime):
+            return
+        if row:
+            if (row[0] or "") != "done":
+                conn.execute(
+                    "UPDATE ocr_queue SET ext = ?, size = ?, mtime = ?, status = 'pending', last_error = ?, updated_at = ? WHERE path = ?",
+                    (ext, int(stat.st_size), int(stat.st_mtime), reason[:500], now, p),
+                )
+        else:
+            conn.execute(
+                "INSERT INTO ocr_queue (path, ext, size, mtime, status, attempts, last_error, updated_at) VALUES (?, ?, ?, ?, 'pending', 0, ?, ?)",
+                (p, ext, int(stat.st_size), int(stat.st_mtime), reason[:500], now),
+            )
+    except Exception as e:
+        log(f"ocr_queue_error path={p} err={e}")
+
+
+def get_state(conn: sqlite3.Connection, path: str) -> Optional[Tuple[int, int, Optional[str], int, int, int]]:
     cur = conn.execute(
-        "SELECT size, mtime, cfg_hash, COALESCE(complete, 1) FROM file_state WHERE path = ?",
+        "SELECT size, mtime, cfg_hash, COALESCE(complete, 1), COALESCE(aux_mtime, 0), COALESCE(aux_size, 0) FROM file_state WHERE path = ?",
         (path,),
     )
     row = cur.fetchone()
     return row if row else None
 
 
-def set_state(conn: sqlite3.Connection, path: str, size: int, mtime: int, cfg_hash: str, complete: bool, text_hash: str, last_error: str = "") -> None:
+def set_state(
+    conn: sqlite3.Connection,
+    path: str,
+    size: int,
+    mtime: int,
+    aux_mtime: int,
+    aux_size: int,
+    cfg_hash: str,
+    complete: bool,
+    text_hash: str,
+    last_error: str = "",
+) -> None:
     conn.execute(
-        "INSERT OR REPLACE INTO file_state (path, size, mtime, cfg_hash, complete, text_hash, last_error, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (path, size, mtime, cfg_hash, 1 if complete else 0, text_hash, last_error, int(time.time())),
+        "INSERT OR REPLACE INTO file_state (path, size, mtime, aux_mtime, aux_size, cfg_hash, complete, text_hash, last_error, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (path, size, mtime, aux_mtime, aux_size, cfg_hash, 1 if complete else 0, text_hash, last_error, int(time.time())),
     )
 
 
@@ -549,7 +878,96 @@ def chunk_text(text: str) -> List[str]:
     return chunks
 
 
-def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
+def extract_docx_text_ooxml(path: Path) -> str:
+    try:
+        with zipfile.ZipFile(str(path), "r") as z:
+            xml = z.read("word/document.xml")
+    except Exception:
+        return ""
+    try:
+        root = ET.fromstring(xml)
+    except Exception:
+        return ""
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    paras: List[str] = []
+    for p in root.iter(ns + "p"):
+        parts: List[str] = []
+        for t in p.iter(ns + "t"):
+            if t.text:
+                parts.append(t.text)
+        if parts:
+            paras.append("".join(parts))
+    return "\n".join(paras)
+
+
+def extract_xlsx_text_ooxml(path: Path, max_cells: int) -> str:
+    try:
+        with zipfile.ZipFile(str(path), "r") as z:
+            shared: List[str] = []
+            try:
+                ss_xml = z.read("xl/sharedStrings.xml")
+                ss_root = ET.fromstring(ss_xml)
+                ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+                for si in ss_root.iter(ns + "si"):
+                    t_parts = [t.text or "" for t in si.iter(ns + "t")]
+                    shared.append("".join(t_parts))
+            except Exception:
+                shared = []
+
+            ws_files = sorted([n for n in z.namelist() if n.startswith("xl/worksheets/") and n.endswith(".xml")])
+            ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+            def cell_value(c) -> str:
+                t = (c.get("t") or "").strip()
+                v = c.find(ns + "v")
+                if v is None or v.text is None:
+                    is_el = c.find(ns + "is")
+                    if is_el is not None:
+                        t_parts = [t2.text or "" for t2 in is_el.iter(ns + "t")]
+                        return "".join(t_parts)
+                    return ""
+                raw = v.text
+                if t == "s":
+                    try:
+                        return shared[int(raw)]
+                    except Exception:
+                        return raw
+                return raw
+
+            out_lines: List[str] = []
+            cells = 0
+            for ws in ws_files:
+                if cells >= max_cells:
+                    break
+                try:
+                    ws_xml = z.read(ws)
+                except Exception:
+                    continue
+                try:
+                    root = ET.fromstring(ws_xml)
+                except Exception:
+                    continue
+                for row in root.iter(ns + "row"):
+                    if cells >= max_cells:
+                        break
+                    row_parts: List[str] = []
+                    for c in row.iter(ns + "c"):
+                        val = cell_value(c)
+                        if val:
+                            row_parts.append(val)
+                            cells += 1
+                            if cells >= max_cells:
+                                break
+                    if row_parts:
+                        out_lines.append("\t".join(row_parts))
+                # Avoid holding the full tree for very large sheets.
+                root.clear()
+            return "\n".join(out_lines)
+    except Exception:
+        return ""
+
+
+def extract_chunks(path: Path, stat: os.stat_result) -> Tuple[List[str], str]:
     max_chunks = max(1, MAX_CHUNKS_PER_FILE)
     budget_chars = max(MAX_CHARS, CHUNK_SIZE * max_chunks)
 
@@ -557,7 +975,7 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
     if is_text_file(path):
         if stat.st_size <= MAX_BYTES:
             text, _ = read_text(path, max_chars=budget_chars)
-            return chunk_text(text)[:max_chunks]
+            return chunk_text(text)[:max_chunks], "text"
 
         # Sample evenly across the file; total bytes read stays bounded by MAX_BYTES.
         windows = max(1, min(SAMPLE_WINDOWS, max_chunks))
@@ -582,61 +1000,48 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
         except Exception:
             return [path.name]
 
-        return out[:max_chunks] if out else [path.name]
+        return (out[:max_chunks] if out else [path.name]), ("text_sampled" if out else "fallback_name")
 
     # PDFs
     if path.suffix.lower() == ".pdf":
+        text = ""
+        # Prefer builtin CLIs (present on macOS via Poppler) over optional Python deps.
         try:
-            import pdfplumber  # type: ignore
-            parts = []
-            with pdfplumber.open(str(path)) as pdf:
-                idxs = page_sample_indices(len(pdf.pages), PDF_MAX_PAGES)
-                for i in idxs:
-                    parts.append((pdf.pages[i].extract_text() or ""))
-            text = "\n".join(parts)
-            return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
+            text = extract_pdf_text_pdftotext(path, PDF_MAX_PAGES)
         except Exception:
-            try:
-                from pypdf import PdfReader  # type: ignore
-                reader = PdfReader(str(path))
-                parts = []
-                idxs = page_sample_indices(len(reader.pages), PDF_MAX_PAGES)
-                for i in idxs:
-                    parts.append((reader.pages[i].extract_text() or ""))
-                text = "\n".join(parts)
-                return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
-            except Exception:
-                return [path.name]
+            text = ""
+        if text and len(text.strip()) >= OCR_PDF_MIN_TEXT_CHARS:
+            return chunk_text(text[:budget_chars])[:max_chunks], "pdf_pdftotext"
+        ocr = read_ocr_sidecar(path, budget_chars)
+        if ocr and len(ocr.strip()) >= 10:
+            return chunk_text(ocr[:budget_chars])[:max_chunks], "pdf_ocr_sidecar"
+        return [path.name], "pdf_no_text"
 
     # DOCX
     if path.suffix.lower() == ".docx":
-        try:
-            import docx  # type: ignore
-            doc = docx.Document(str(path))
-            text = "\n".join([p.text for p in doc.paragraphs if p.text])
-            return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
-        except Exception:
-            return [path.name]
+        text = extract_docx_text_ooxml(path)
+        return (chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]), ("docx_ooxml" if text else "docx_no_text")
 
     # XLSX
     if path.suffix.lower() in {".xlsx", ".xlsm"}:
-        try:
-            import openpyxl  # type: ignore
-            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
-            parts = []
-            cells = 0
-            for ws in wb.worksheets:
-                for row in ws.iter_rows(values_only=True):
-                    parts.append("\t".join([str(c) for c in row if c is not None]))
-                    cells += sum(1 for c in row if c is not None)
-                    if cells >= XLSX_MAX_CELLS:
-                        break
-                if cells >= XLSX_MAX_CELLS:
-                    break
-            text = "\n".join(parts)
-            return chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]
-        except Exception:
-            return [path.name]
+        text = extract_xlsx_text_ooxml(path, XLSX_MAX_CELLS)
+        return (chunk_text(text[:budget_chars])[:max_chunks] if text else [path.name]), ("xlsx_ooxml" if text else "xlsx_no_text")
+
+    # Images (OCR sidecar)
+    if is_image_file(path):
+        ocr = read_ocr_sidecar(path, budget_chars)
+        if ocr and len(ocr.strip()) >= 10:
+            return chunk_text(ocr[:budget_chars])[:max_chunks], "image_ocr_sidecar"
+        # Keep some context so semantic search can still hit filenames/folders.
+        parts: List[str] = []
+        cur = path
+        for _ in range(6):
+            if cur.name:
+                parts.append(cur.name)
+            if cur.parent == cur:
+                break
+            cur = cur.parent
+        return [" / ".join(reversed(parts))] if parts else [path.name], "image_no_text"
 
     # Non-text/binary: index a short path context instead of only basename.
     parts: List[str] = []
@@ -647,7 +1052,7 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
         if cur.parent == cur:
             break
         cur = cur.parent
-    return [" / ".join(reversed(parts))] if parts else [path.name]
+    return ([" / ".join(reversed(parts))] if parts else [path.name]), "path_context"
 
 
 def create_payload_indexes() -> None:
@@ -703,6 +1108,24 @@ def delete_points_for_path(path: str) -> None:
         )
     except Exception as e:
         log(f"delete_path_error path={path} err={e}")
+
+
+def delete_points_for_path_chunk_index_ge(path: str, min_chunk_index: int) -> None:
+    payload = {
+        "filter": {
+            "must": [
+                {"key": "path", "match": {"value": path}},
+                {"key": "chunk_index", "range": {"gte": int(min_chunk_index)}},
+            ]
+        }
+    }
+    try:
+        qdrant_post(
+            f"/collections/{COLLECTION}/points/delete{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
+            payload,
+        )
+    except Exception as e:
+        log(f"delete_path_stale_error path={path} err={e}")
 
 
 class EmbedCache:
@@ -818,6 +1241,9 @@ def run_config_hash(provider: str) -> str:
         "max_chunks_per_file": MAX_CHUNKS_PER_FILE,
         "xlsx_max_cells": XLSX_MAX_CELLS,
         "embed_max_chars": EMBED_MAX_CHARS,
+        "payload_preview_max_chars": PAYLOAD_PREVIEW_MAX_CHARS,
+        "snippet_max_chars": SNIPPET_MAX_CHARS,
+        "ocr_pdf_min_text_chars": OCR_PDF_MIN_TEXT_CHARS,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
@@ -833,6 +1259,7 @@ def main() -> int:
 
     # state db for incremental indexing
     conn = ensure_state_db()
+    snip_conn = ensure_snippets_db()
     cfg_hash = run_config_hash(provider)
     prev_cfg = get_meta(conn, "run_cfg_hash")
     if prev_cfg != cfg_hash:
@@ -856,7 +1283,10 @@ def main() -> int:
 
     effective_batch_size = max(1, max(BATCH_SIZE, MAX_CHUNKS_PER_FILE))
     batch: List[Dict[str, Any]] = []
-    pending_states: List[Tuple[str, int, int, bool, str, str]] = []
+    pending_states: List[Tuple[str, int, int, int, int, bool, str, str]] = []
+    pending_snippets: List[Tuple[Any, ...]] = []
+    pending_qdrant_stale_deletes: List[Tuple[str, int]] = []
+    pending_snippet_stale_deletes: List[Tuple[str, int]] = []
     points_indexed = 0
     files_seen = 0
     files_indexed = 0
@@ -875,7 +1305,7 @@ def main() -> int:
     cache = EmbedCache(EMBED_CACHE_SIZE)
 
     def flush_batch() -> None:
-        nonlocal batch_id, batch, pending_states
+        nonlocal batch_id, batch, pending_states, pending_snippets, pending_qdrant_stale_deletes, pending_snippet_stale_deletes
         if not batch:
             return
         batch_id += 1
@@ -883,6 +1313,14 @@ def main() -> int:
         last_path = batch[-1]["payload"]["path"]
         try:
             upsert_batch(batch)
+            try:
+                upsert_snippets(snip_conn, pending_snippets)
+                if snip_conn is not None:
+                    for p, min_idx in pending_snippet_stale_deletes:
+                        delete_snippets_stale(snip_conn, p, min_idx)
+                    snip_conn.commit()
+            except Exception as e:
+                log(f"snippets_flush_error err={e}")
             audit.write(
                 json.dumps(
                     {
@@ -897,9 +1335,14 @@ def main() -> int:
                 )
                 + "\n"
             )
-            for p, size, mtime, complete, fp, last_err in pending_states:
-                set_state(conn, p, size, mtime, cfg_hash, complete, fp, last_err)
+            for p, size, mtime, aux_mtime, aux_size, complete, fp, last_err in pending_states:
+                set_state(conn, p, size, mtime, aux_mtime, aux_size, cfg_hash, complete, fp, last_err)
             conn.commit()
+            for p, min_idx in pending_qdrant_stale_deletes:
+                try:
+                    delete_points_for_path_chunk_index_ge(p, min_idx)
+                except Exception as e:
+                    log(f"delete_stale_error path={p} err={e}")
         except Exception as e:
             audit.write(
                 json.dumps(
@@ -921,6 +1364,9 @@ def main() -> int:
         audit.flush()
         batch.clear()
         pending_states.clear()
+        pending_snippets.clear()
+        pending_qdrant_stale_deletes.clear()
+        pending_snippet_stale_deletes.clear()
 
     for path in iter_files(roots):
         if MAX_FILES and files_indexed >= MAX_FILES:
@@ -933,13 +1379,21 @@ def main() -> int:
             continue
 
         # incremental skip by mtime+size+config hash and only if the last attempt was complete
+        aux_mtime, aux_size = ocr_sidecar_stat(path)
         state = get_state(conn, str(path))
-        if state and state[0] == stat.st_size and state[1] == int(stat.st_mtime) and state[2] == cfg_hash and int(state[3]) == 1:
+        if (
+            state
+            and state[0] == stat.st_size
+            and state[1] == int(stat.st_mtime)
+            and state[2] == cfg_hash
+            and int(state[3]) == 1
+            and int(state[4]) == int(aux_mtime)
+            and int(state[5]) == int(aux_size)
+        ):
             skipped += 1
             skipped_incremental += 1
             continue
-        if state:
-            delete_points_for_path(str(path))
+        had_prev = state is not None
 
         # cross-root file dedup (byte-signature)
         if DEDUP_FILES:
@@ -951,10 +1405,11 @@ def main() -> int:
                 if canonical and canonical != str(path):
                     # ensure duplicates do not linger from previous runs
                     delete_points_for_path(str(path))
+                    delete_snippets_for_path(snip_conn, str(path))
                     skipped += 1
                     skipped_dedup += 1
                     try:
-                        set_state(conn, str(path), stat.st_size, int(stat.st_mtime), cfg_hash, True, sig, "")
+                        set_state(conn, str(path), stat.st_size, int(stat.st_mtime), aux_mtime, aux_size, cfg_hash, True, sig, "")
                         conn.commit()
                     except Exception:
                         pass
@@ -978,17 +1433,20 @@ def main() -> int:
                         pass
                     continue
 
-        chunks = extract_chunks(path, stat)
+        chunks, source = extract_chunks(path, stat)
         if not chunks:
             skipped += 1
             continue
         chunks = chunks[: max(1, MAX_CHUNKS_PER_FILE)]
+        if source in ("pdf_no_text", "image_no_text") and aux_mtime == 0 and aux_size == 0:
+            enqueue_ocr(conn, path, stat, f"low_text source={source}")
 
         vectors, vec_errs = embed_texts(provider, chunks, cache)
         file_had_points = False
         file_complete = True
         last_err = ""
         file_points: List[Dict[str, Any]] = []
+        now_ts = int(time.time())
         for idx, (chunk, vec) in enumerate(zip(chunks, vectors)):
             if vec is None:
                 embed_errors += 1
@@ -999,17 +1457,36 @@ def main() -> int:
             pid = str(uuid.UUID(hex=hashlib.md5(f"{path}::{idx}".encode("utf-8")).hexdigest()))
             # Hash the exact text sent for embeddings (after clamping) so the payload reflects reality.
             chunk_for_embed = clamp_embedding_text(chunk)
+            preview = chunk if PAYLOAD_PREVIEW_MAX_CHARS == 0 else chunk[: max(0, PAYLOAD_PREVIEW_MAX_CHARS)]
+            snippet_text = chunk if SNIPPET_MAX_CHARS == 0 else chunk[: max(0, SNIPPET_MAX_CHARS)]
             payload = {
                 "path": str(path),
                 "name": path.name,
                 "size": stat.st_size,
                 "mtime": int(stat.st_mtime),
                 "source": "dropbox",
+                "text_source": source,
                 "chunk_index": idx,
                 "chunk_total": len(chunks),
                 "text_hash": text_hash(chunk_for_embed),
+                "preview": preview,
             }
             file_points.append({"id": pid, "vector": vec, "payload": payload})
+            pending_snippets.append(
+                (
+                    pid,
+                    str(path),
+                    idx,
+                    len(chunks),
+                    int(stat.st_mtime),
+                    int(stat.st_size),
+                    source,
+                    cfg_hash,
+                    payload["text_hash"],
+                    snippet_text,
+                    now_ts,
+                )
+            )
             points_indexed += 1
             file_had_points = True
 
@@ -1018,7 +1495,18 @@ def main() -> int:
         else:
             # Do not mark as complete; this file should be retried later.
             try:
-                set_state(conn, str(path), stat.st_size, int(stat.st_mtime), cfg_hash, False, chunks_fingerprint(chunks), last_err or "no_vectors")
+                set_state(
+                    conn,
+                    str(path),
+                    int(stat.st_size),
+                    int(stat.st_mtime),
+                    int(aux_mtime),
+                    int(aux_size),
+                    cfg_hash,
+                    False,
+                    chunks_fingerprint(chunks),
+                    last_err or "no_vectors",
+                )
                 if files_seen % 200 == 0:
                     conn.commit()
             except Exception:
@@ -1030,11 +1518,16 @@ def main() -> int:
             flush_batch()
 
         batch.extend(file_points)
+        if had_prev:
+            pending_qdrant_stale_deletes.append((str(path), int(len(chunks))))
+            pending_snippet_stale_deletes.append((str(path), int(len(chunks))))
         pending_states.append(
             (
                 str(path),
                 int(stat.st_size),
                 int(stat.st_mtime),
+                int(aux_mtime),
+                int(aux_size),
                 file_complete,
                 chunks_fingerprint(chunks),
                 last_err,
@@ -1051,6 +1544,9 @@ def main() -> int:
     try:
         conn.commit()
         conn.close()
+        if snip_conn is not None:
+            snip_conn.commit()
+            snip_conn.close()
     except Exception:
         pass
     log(

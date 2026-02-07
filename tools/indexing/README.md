@@ -6,32 +6,50 @@ This folder contains the canonical, versioned scripts for building auditable sem
 Script: `tools/indexing/index_dropbox_qdrant.py`
 
 ### What This Script Guarantees
-- No deletes on disk.
-- When a file is reindexed, old vectors for that file are deleted inside Qdrant first (by `payload.path`) to prevent stale chunks.
-- A file is only marked "complete" in the SQLite state DB after its vectors were successfully upserted to Qdrant.
-  This avoids a classic correctness bug: marking files as indexed even when embedding/upsert failed, which would cause permanent gaps.
+- No deletes on disk (your Dropbox files are never modified or removed).
+- Incremental indexing: unchanged files are skipped reliably.
+- Correctness under failures:
+  - A file is only marked `complete=1` in the SQLite state DB after Qdrant confirms the upsert.
+  - On reindex, the script avoids wiping an existing file index up front. It upserts new vectors first, then deletes only stale chunks (`chunk_index >= new_chunk_total`) to prevent lingering old chunks.
 
 ### Core Features
 - Incremental indexing via a local SQLite state DB (`QDRANT_STATE_DB`).
 - Config-sensitive caching: `cfg_hash` is stored per file so changing chunking/model/extraction settings triggers reindex.
 - Chunking + overlap (better recall on long documents).
 - Large-file support:
-  - For huge text files: bounded sampling windows across the file.
-  - For PDFs: page sampling across the document, not only the first pages.
-  - For XLSX: streaming read with cell cap.
+  - Huge text files: bounded sampling windows across the file (`QDRANT_MAX_BYTES`, `QDRANT_SAMPLE_WINDOWS`).
+  - PDFs: page sampling across the document (bounded by `QDRANT_PDF_MAX_PAGES`).
+  - XLSX: capped extraction (`QDRANT_XLSX_MAX_CELLS`).
 - Deduplication:
   - File-level dedup across multiple roots (prefix+suffix hashing, bounded reads).
   - Embedding-level in-memory cache (avoids repeated embedding calls for identical chunks).
-  - Stale canonical path handling (if the canonical path disappears or is outside the scanned roots, the script promotes a valid copy and deletes stale Qdrant points).
+  - Stale canonical path handling (if the canonical path disappears or is outside scanned roots, the script promotes a valid copy and deletes stale Qdrant points).
 - Auditing:
   - JSONL audit file (`QDRANT_AUDIT_PATH`).
   - Each run emits a unique `run_id` and includes it in batch events.
+
+### Preview Snippets (Search Result Previews)
+- Each Qdrant point payload includes a short `preview` field (default 400 chars).
+- Optional local snippets DB for richer previews and keyword search:
+  - SQLite DB: `QDRANT_SNIPPETS_DB`
+  - Table: `chunks` (and optional `chunks_fts` for FTS5)
+
+### OCR Support (Scanned PDFs / Images)
+The indexer itself does not do heavy OCR inline.
+
+Instead:
+1. Indexer extracts text normally (PDFs via `pdftotext`, DOCX/XLSX via OOXML parsing).
+2. If a PDF/image has too little text and there is no OCR sidecar present, it enqueues a job in `ocr_queue` (in the state DB).
+3. Run the OCR backfill worker to generate sidecars into `QDRANT_OCR_SIDECAR_DIR`:
+   - Script: `tools/indexing/ocr_backfill.py`
+   - Uses: `tesseract`, `pdftoppm`, `pdfinfo` (and `sips`/`convert` for HEIC)
+4. Next index run will reprocess those files automatically because sidecar `mtime/size` is tracked in `file_state`.
 
 ### Embeddings Providers
 - `openai`:
   - Uses `POST /v1/embeddings` with batch input.
 - `ollama` (recommended for local/offline):
-  - Uses `POST /api/embed` with batch inputs and `truncate` support (modern Ollama API).
+  - Uses `POST /api/embed` with batch inputs (modern Ollama API).
   - Falls back to legacy `POST /api/embeddings` if needed.
 
 ### Qdrant Best-Practice Writes
@@ -44,7 +62,7 @@ Script: `tools/indexing/index_dropbox_qdrant.py`
 ### Quickstart
 ```bash
 export QDRANT_URL="http://127.0.0.1:6333"
-export QDRANT_COLLECTION="dropbox_semantic_v3"
+export QDRANT_COLLECTION="dropbox_semantic_v4"
 export QDRANT_EMBEDDING_PROVIDER="ollama"   # or openai
 export OLLAMA_MODEL="nomic-embed-text"
 
@@ -53,7 +71,31 @@ python3 tools/indexing/index_dropbox_qdrant.py \
   "$HOME/Library/CloudStorage/Dropbox (Backup)"
 ```
 
-### Important Env Vars
+### Search Tool (Shows Previews)
+Script: `tools/indexing/search_dropbox_index.py`
+
+Examples:
+```bash
+python3 tools/indexing/search_dropbox_index.py "invoice 2024" --limit 10
+python3 tools/indexing/search_dropbox_index.py "proforma" --fts --limit 10
+python3 tools/indexing/search_dropbox_index.py "proforma" --hybrid --limit 10
+```
+
+### Evaluation Harness (Quality Tests)
+Script: `tools/indexing/eval_index.py`
+
+Input format: JSONL lines, e.g.:
+```jsonl
+{"query":"invoice 2024","expect_any":["Invoices/2024"],"k":10}
+{"query":"serial number DS423","expect_any":["Synology"],"k":10}
+```
+
+Run:
+```bash
+python3 tools/indexing/eval_index.py --queries queries.sample.jsonl --k 10
+```
+
+### Important Env Vars (Indexing)
 - `QDRANT_URL`: Qdrant endpoint.
 - `QDRANT_API_KEY`: optional; uses `api-key` header.
 - `QDRANT_COLLECTION`: collection name.
@@ -68,37 +110,28 @@ python3 tools/indexing/index_dropbox_qdrant.py \
 - `QDRANT_DEDUP_FILES`: `1`/`0` for cross-root file dedup.
 - `QDRANT_DEDUP_EMBEDDINGS`: `1`/`0` for embedding cache.
 - `QDRANT_EMBED_MAX_CHARS`: clamp text length sent to embeddings to avoid context-length failures.
-- `QDRANT_EXCLUDE_DIRS`: comma-separated directory names to skip (defaults include `.dropbox.cache`, `.git`, `node_modules`).
-- `QDRANT_EXCLUDE_FILES`: comma-separated file names to skip (defaults include `.DS_Store`).
-- `OLLAMA_HOST`, `OLLAMA_MODEL`.
-- `OLLAMA_USE_BATCH`: `1`/`0`.
-- `OLLAMA_BATCH_SIZE`.
-- `OLLAMA_TRUNCATE`: `1`/`0`.
-- `INDEX_HTTP_CONNECT_TIMEOUT`, `INDEX_HTTP_MAX_TIME`: curl timeouts (seconds).
-- `INDEX_HTTP_RETRIES`, `INDEX_HTTP_RETRY_SLEEP_SECONDS`: retry policy for transient network failures.
+- `QDRANT_EXCLUDE_DIRS`: comma-separated directory names to skip.
+- `QDRANT_EXCLUDE_FILES`: comma-separated file names to skip.
+- `QDRANT_PAYLOAD_PREVIEW_MAX_CHARS`: preview length stored in Qdrant payload (`preview`).
+- `QDRANT_SNIPPETS_ENABLED`: `1`/`0` to enable snippets DB.
+- `QDRANT_SNIPPETS_DB`: snippets DB path.
+- `QDRANT_SNIPPET_MAX_CHARS`: snippet text length stored in snippets DB.
+- `QDRANT_SNIPPETS_FTS`: `1`/`0` enable FTS5 virtual table + triggers.
+- `QDRANT_OCR_SIDECAR_DIR`: where OCR sidecars live.
+- `QDRANT_OCR_PDF_MIN_TEXT_CHARS`: threshold to treat a PDF as "no text" and queue OCR.
 
-### Operational Notes (Do/Don\x27t)
-- Do keep `QDRANT_BATCH_SIZE >= QDRANT_MAX_CHUNKS_PER_FILE` to avoid splitting a single file across multiple upserts.
-  The script enforces this internally, but matching it avoids surprises.
-- Do treat audit logs as sensitive: they contain file paths.
-- Don\x27t put API keys in repo.
-- Don\x27t mark files complete before Qdrant confirms the upsert.
+### Important Env Vars (OCR Worker)
+- `OCR_LANGS`: tesseract language(s), e.g. `eng` or `eng+ces` (if installed).
+- `OCR_MAX_FILES`: max files processed per run.
+- `OCR_MAX_PAGES`: max pages OCR'd per PDF (sampled).
+- `OCR_RENDER_DPI`: render DPI for PDF OCR.
+- `OCR_LOG_PATH`: log path for OCR worker.
+- `OCR_FORCE=1`: reprocess even already `done`.
 
-## Full Filesystem Map (Inventory)
-Script: `tools/indexing/full_fs_map.py`
-
-Outputs a snapshot directory with:
-- `FS_MAP.jsonl.gz` (atomic: written to `.tmp` then renamed on completion)
-- `FS_PROGRESS.json` heartbeat (every ~5s)
-- `FS_SUMMARY.json` totals + metadata
-- `FS_ERRORS.log` permission and stat errors
-
-## Repo Map (Git Inventory)
-Script: `tools/indexing/repo_map.py`
-
-Maps all reachable git repos under chosen roots.
-Outputs CSV/JSON/MD summaries with:
-- repo path, origin remote (sanitized), HEAD ref/sha
-- duplicates and orphans
+### Operational Notes (Do/Don't)
+- Do treat audit logs, snippet DB, and OCR sidecars as sensitive: they contain file paths and extracted text.
+- Don't put API keys in git.
+- Don't run OCR at unlimited scale; keep it in small batches and let it catch up gradually.
 
 Last updated: 2026-02-07
+
