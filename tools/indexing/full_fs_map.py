@@ -11,7 +11,7 @@ from typing import Dict, Iterable, List, Set
 
 def default_roots() -> List[str]:
     roots: List[str] = []
-    home = str(Path.home())
+    home = "/Users/premiumgastro"
     if os.path.exists(home):
         roots.append(home)
     vols = "/Volumes"

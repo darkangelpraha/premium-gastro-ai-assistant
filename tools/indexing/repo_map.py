@@ -7,22 +7,20 @@ import re
 import sys
 import time
 from pathlib import Path
-
-HOME = Path.home()
 from typing import Dict, List, Optional, Tuple
 
 DEFAULT_ROOT_CANDIDATES = [
-    str(HOME / "Projects"),
-    str(HOME / "Development"),
-    str(HOME / "Documents"),
-    str(HOME / "Desktop"),
-    str(HOME / "GitHub"),
-    str(HOME / "Repos"),
-    str(HOME / "src"),
-    str(HOME / "code"),
-    str(HOME / "workspace"),
-    str(HOME / "Workspaces"),
-    str(HOME / "Library" / "CloudStorage"),
+    "/Users/premiumgastro/Projects",
+    "/Users/premiumgastro/Development",
+    "/Users/premiumgastro/Documents",
+    "/Users/premiumgastro/Desktop",
+    "/Users/premiumgastro/GitHub",
+    "/Users/premiumgastro/Repos",
+    "/Users/premiumgastro/src",
+    "/Users/premiumgastro/code",
+    "/Users/premiumgastro/workspace",
+    "/Users/premiumgastro/Workspaces",
+    "/Users/premiumgastro/Library/CloudStorage",
 ]
 
 SKIP_DIR_NAMES = {
@@ -42,11 +40,11 @@ SKIP_DIR_NAMES = {
 }
 
 SKIP_PATH_PREFIXES = [
-    str(HOME / "Library" / "Containers"),
-    str(HOME / "Library" / "Caches"),
-    str(HOME / "Library" / "Application Support" / "Code" / "Cache"),
-    str(HOME / "Library" / "Application Support" / "Cursor" / "Cache"),
-    str(HOME / "Library" / "Group Containers"),
+    "/Users/premiumgastro/Library/Containers",
+    "/Users/premiumgastro/Library/Caches",
+    "/Users/premiumgastro/Library/Application Support/Code/Cache",
+    "/Users/premiumgastro/Library/Application Support/Cursor/Cache",
+    "/Users/premiumgastro/Library/Group Containers",
 ]
 
 

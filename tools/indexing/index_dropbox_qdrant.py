@@ -12,11 +12,15 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable, Tuple, Dict, Any, List, Optional
+from urllib.parse import urlencode
+
+INDEXER_VERSION = "2026-02-07.ollama-embed-batch-state-v3"
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
-COLLECTION = os.environ.get("QDRANT_COLLECTION", "dropbox_semantic_v2")
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY") or os.environ.get("QDRANT_APIKEY")
+COLLECTION = os.environ.get("QDRANT_COLLECTION", "dropbox_semantic_index")
 VECTOR_SIZE = int(os.environ.get("QDRANT_VECTOR_SIZE", "0"))  # 0 = auto-detect
-BATCH_SIZE = int(os.environ.get("QDRANT_BATCH_SIZE", "16"))
+BATCH_SIZE = int(os.environ.get("QDRANT_BATCH_SIZE", "16"))  # points per upsert
 MAX_BYTES = int(os.environ.get("QDRANT_MAX_BYTES", str(2 * 1024 * 1024)))  # 2MB per file
 MAX_CHARS = int(os.environ.get("QDRANT_MAX_CHARS", "12000"))
 CHUNK_SIZE = int(os.environ.get("QDRANT_CHUNK_SIZE", "2000"))
@@ -32,6 +36,10 @@ DEDUP_FILES = os.environ.get("QDRANT_DEDUP_FILES", "1") != "0"
 DEDUP_HASH_BYTES = int(os.environ.get("QDRANT_DEDUP_HASH_BYTES", str(256 * 1024)))
 DEDUP_HASH_SUFFIX_BYTES = int(os.environ.get("QDRANT_DEDUP_HASH_SUFFIX_BYTES", str(256 * 1024)))
 CREATE_PAYLOAD_INDEXES = os.environ.get("QDRANT_CREATE_PAYLOAD_INDEXES", "1") != "0"
+PAYLOAD_INDEX_ON_DISK = os.environ.get("QDRANT_PAYLOAD_INDEX_ON_DISK", "0") == "1"
+MTIME_IS_PRINCIPAL = os.environ.get("QDRANT_MTIME_IS_PRINCIPAL", "1") != "0"
+QDRANT_WAIT = os.environ.get("QDRANT_WAIT", "1") != "0"
+QDRANT_ORDERING = os.environ.get("QDRANT_ORDERING", "weak").lower()
 AUDIT_PATH = os.environ.get("QDRANT_AUDIT_PATH", "/tmp/qdrant_dropbox_audit.jsonl")
 LOG_PATH = os.environ.get("QDRANT_LOG_PATH", "/tmp/qdrant_dropbox_index.log")
 MAX_FILES = int(os.environ.get("QDRANT_MAX_FILES", "0"))  # 0 = no limit
@@ -39,31 +47,41 @@ STATE_DB = os.environ.get(
     "QDRANT_STATE_DB",
     str(Path.cwd() / ".cache" / "qdrant_dropbox_state.sqlite"),
 )
+EXCLUDE_DIR_NAMES = {
+    s.strip()
+    for s in os.environ.get("QDRANT_EXCLUDE_DIRS", ".dropbox.cache,.git,.hg,.svn,node_modules,.venv").split(",")
+    if s.strip()
+}
+EXCLUDE_FILE_NAMES = {
+    s.strip()
+    for s in os.environ.get("QDRANT_EXCLUDE_FILES", ".DS_Store,Thumbs.db,desktop.ini").split(",")
+    if s.strip()
+}
 
 EMBEDDING_PROVIDER = os.environ.get("QDRANT_EMBEDDING_PROVIDER", "auto").lower()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "nomic-embed-text")
+OLLAMA_EMBED_ENDPOINT = os.environ.get("OLLAMA_EMBED_ENDPOINT", "/api/embed")
+OLLAMA_EMBED_LEGACY_ENDPOINT = os.environ.get("OLLAMA_EMBED_LEGACY_ENDPOINT", "/api/embeddings")
+OLLAMA_TRUNCATE = os.environ.get("OLLAMA_TRUNCATE", "1") != "0"
+OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "5m")
+OLLAMA_USE_BATCH = os.environ.get("OLLAMA_USE_BATCH", "1") != "0"
+OLLAMA_BATCH_SIZE = int(os.environ.get("OLLAMA_BATCH_SIZE", "32"))
+EMBED_MAX_CHARS = int(os.environ.get("QDRANT_EMBED_MAX_CHARS", "8000"))  # 0 = no clamp
 
-def default_roots() -> List[str]:
-    # macOS Dropbox client mounts under ~/Library/CloudStorage
+def discover_dropbox_roots() -> List[str]:
     base = Path.home() / "Library" / "CloudStorage"
-    if not base.is_dir():
+    if not base.exists():
         return []
+    roots = [p for p in base.glob("Dropbox*") if p.is_dir()]
+    # Prefer the canonical "Dropbox" first if present, then stable order.
+    roots_sorted = sorted(roots, key=lambda p: (p.name != "Dropbox", p.name.lower()))
+    return [str(p) for p in roots_sorted]
 
-    # Includes historical/duplicated mounts like "Dropbox (....)".
-    candidates = [p for p in sorted(base.glob("Dropbox*")) if p.is_dir()]
 
-    seen = set()
-    out: List[str] = []
-    for p in candidates:
-        rp = str(p.resolve())
-        if rp in seen:
-            continue
-        seen.add(rp)
-        out.append(str(p))
-    return out
+DEFAULT_ROOTS = discover_dropbox_roots()
 
 TEXT_EXTS = {
     ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".yaml", ".yml",
@@ -96,6 +114,8 @@ def http_json(method: str, url: str, payload: Any = None, headers: Optional[Dict
         url,
         "-H",
         "Content-Type: application/json",
+        "-w",
+        "\n__HTTP_STATUS__%{http_code}",
     ]
     if headers:
         for k, v in headers.items():
@@ -108,8 +128,28 @@ def http_json(method: str, url: str, payload: Any = None, headers: Optional[Dict
     for attempt in range(HTTP_RETRIES + 1):
         res = subprocess.run(cmd, input=data, capture_output=True, text=True)
         if res.returncode == 0:
-            out = res.stdout.strip()
-            return json.loads(out) if out else {}
+            stdout = res.stdout
+            body, status = stdout, 200
+            if "__HTTP_STATUS__" in stdout:
+                body, status_str = stdout.rsplit("__HTTP_STATUS__", 1)
+                try:
+                    status = int(status_str.strip())
+                except Exception:
+                    status = 200
+            body = body.strip()
+            obj: Dict[str, Any]
+            if body:
+                try:
+                    obj = json.loads(body)
+                except Exception:
+                    obj = {"_raw": body[:2000]}
+            else:
+                obj = {}
+            if status >= 400:
+                msg = obj.get("error") or obj.get("message") or obj.get("_raw") or body[:200]
+                raise RuntimeError(f"HTTP {status} {method} {url}: {msg}")
+            return obj
+
         last_err = (res.stderr.strip() or res.stdout.strip() or "curl failed").strip()
         retryable = any(
             s in last_err.lower()
@@ -137,15 +177,33 @@ def qdrant_check(res: Dict[str, Any]) -> Dict[str, Any]:
     return res
 
 
+def qdrant_headers() -> Dict[str, str]:
+    if not QDRANT_API_KEY:
+        return {}
+    return {"api-key": QDRANT_API_KEY}
+
+
+def qdrant_params(wait: Optional[bool] = None, ordering: Optional[str] = None) -> str:
+    qp: Dict[str, str] = {}
+    if wait is not None:
+        qp["wait"] = "true" if wait else "false"
+    if ordering:
+        ordering_l = ordering.lower()
+        if ordering_l not in ("weak", "medium", "strong"):
+            raise RuntimeError(f"Invalid QDRANT_ORDERING={ordering!r} (expected weak|medium|strong)")
+        qp["ordering"] = ordering_l
+    return ("?" + urlencode(qp)) if qp else ""
+
+
 def qdrant_get(path: str) -> Dict[str, Any]:
-    return qdrant_check(http_json("GET", QDRANT_URL + path))
+    return qdrant_check(http_json("GET", QDRANT_URL + path, headers=qdrant_headers()))
 
 
 def qdrant_put(path: str, payload: Any) -> Dict[str, Any]:
-    return qdrant_check(http_json("PUT", QDRANT_URL + path, payload))
+    return qdrant_check(http_json("PUT", QDRANT_URL + path, payload, headers=qdrant_headers()))
 
 def qdrant_post(path: str, payload: Any) -> Dict[str, Any]:
-    return qdrant_check(http_json("POST", QDRANT_URL + path, payload))
+    return qdrant_check(http_json("POST", QDRANT_URL + path, payload, headers=qdrant_headers()))
 
 
 def collection_exists(name: str) -> bool:
@@ -191,11 +249,36 @@ def embed_text_openai(text: str) -> List[float]:
     return res["data"][0]["embedding"]
 
 
-def embed_text_ollama(text: str) -> List[float]:
-    payload = {"model": OLLAMA_MODEL, "prompt": text}
-    res = http_json("POST", f"{OLLAMA_HOST}/api/embeddings", payload)
+def clamp_embedding_text(text: str) -> str:
+    if not isinstance(text, str):
+        text = str(text)
+    if EMBED_MAX_CHARS > 0 and len(text) > EMBED_MAX_CHARS:
+        return text[:EMBED_MAX_CHARS]
+    return text
+
+
+def embed_texts_ollama_modern(texts: List[str]) -> List[List[float]]:
+    payload: Dict[str, Any] = {"model": OLLAMA_MODEL, "input": texts}
+    if OLLAMA_TRUNCATE:
+        payload["truncate"] = True
+    else:
+        payload["truncate"] = False
+    if OLLAMA_KEEP_ALIVE:
+        payload["keep_alive"] = OLLAMA_KEEP_ALIVE
+    res = http_json("POST", f"{OLLAMA_HOST}{OLLAMA_EMBED_ENDPOINT}", payload)
+    embs = res.get("embeddings")
+    if not isinstance(embs, list) or not embs:
+        raise RuntimeError(f"Ollama /api/embed response missing 'embeddings': {str(res)[:200]}")
+    if len(embs) != len(texts):
+        raise RuntimeError(f"Ollama /api/embed embeddings count mismatch: got={len(embs)} expected={len(texts)}")
+    return embs  # type: ignore[return-value]
+
+
+def embed_text_ollama_legacy(text: str) -> List[float]:
+    payload: Dict[str, Any] = {"model": OLLAMA_MODEL, "prompt": text}
+    res = http_json("POST", f"{OLLAMA_HOST}{OLLAMA_EMBED_LEGACY_ENDPOINT}", payload)
     if "embedding" not in res:
-        raise RuntimeError(f"Ollama embedding response missing 'embedding': {str(res)[:200]}")
+        raise RuntimeError(f"Ollama legacy embedding response missing 'embedding': {str(res)[:200]}")
     return res["embedding"]
 
 
@@ -274,7 +357,13 @@ def iter_files(roots: List[str]) -> Iterable[Path]:
         if not os.path.exists(root):
             continue
         for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: None):
+            if EXCLUDE_DIR_NAMES:
+                dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIR_NAMES]
             for name in filenames:
+                if name in EXCLUDE_FILE_NAMES:
+                    continue
+                if name.startswith("._"):
+                    continue
                 yield Path(dirpath) / name
 
 
@@ -282,7 +371,10 @@ def upsert_batch(points: List[Dict[str, Any]]) -> None:
     if not points:
         return
     payload = {"points": points}
-    qdrant_put(f"/collections/{COLLECTION}/points?wait=true", payload)
+    qdrant_put(
+        f"/collections/{COLLECTION}/points{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
+        payload,
+    )
 
 
 def count_files(roots: List[str]) -> int:
@@ -290,8 +382,13 @@ def count_files(roots: List[str]) -> int:
     for root in roots:
         if not os.path.exists(root):
             continue
-        for _, _, filenames in os.walk(root, onerror=lambda e: None):
-            total += len(filenames)
+        for _, dirnames, filenames in os.walk(root, onerror=lambda e: None):
+            if EXCLUDE_DIR_NAMES:
+                dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIR_NAMES]
+            if EXCLUDE_FILE_NAMES:
+                total += sum(1 for n in filenames if n not in EXCLUDE_FILE_NAMES and not n.startswith("._"))
+            else:
+                total += sum(1 for n in filenames if not n.startswith("._"))
     return total
 
 
@@ -305,7 +402,10 @@ def ensure_state_db() -> sqlite3.Connection:
             path TEXT PRIMARY KEY,
             size INTEGER,
             mtime INTEGER,
+            cfg_hash TEXT,
+            complete INTEGER DEFAULT 1,
             text_hash TEXT,
+            last_error TEXT,
             updated_at INTEGER
         )
         """
@@ -327,23 +427,31 @@ def ensure_state_db() -> sqlite3.Connection:
         )
         """
     )
+    # Backward-compatible schema upgrades.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(file_state)")}
+    if "cfg_hash" not in cols:
+        conn.execute("ALTER TABLE file_state ADD COLUMN cfg_hash TEXT")
+    if "complete" not in cols:
+        conn.execute("ALTER TABLE file_state ADD COLUMN complete INTEGER DEFAULT 1")
+    if "last_error" not in cols:
+        conn.execute("ALTER TABLE file_state ADD COLUMN last_error TEXT")
     conn.commit()
     return conn
 
 
-def get_state(conn: sqlite3.Connection, path: str) -> Optional[Tuple[int, int, str]]:
+def get_state(conn: sqlite3.Connection, path: str) -> Optional[Tuple[int, int, Optional[str], int]]:
     cur = conn.execute(
-        "SELECT size, mtime, text_hash FROM file_state WHERE path = ?",
+        "SELECT size, mtime, cfg_hash, COALESCE(complete, 1) FROM file_state WHERE path = ?",
         (path,),
     )
     row = cur.fetchone()
     return row if row else None
 
 
-def set_state(conn: sqlite3.Connection, path: str, size: int, mtime: int, text_hash: str) -> None:
+def set_state(conn: sqlite3.Connection, path: str, size: int, mtime: int, cfg_hash: str, complete: bool, text_hash: str, last_error: str = "") -> None:
     conn.execute(
-        "INSERT OR REPLACE INTO file_state (path, size, mtime, text_hash, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (path, size, mtime, text_hash, int(time.time())),
+        "INSERT OR REPLACE INTO file_state (path, size, mtime, cfg_hash, complete, text_hash, last_error, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (path, size, mtime, cfg_hash, 1 if complete else 0, text_hash, last_error, int(time.time())),
     )
 
 
@@ -377,7 +485,16 @@ def compute_file_sig(path: Path, size: int) -> str:
         return ""
 
 
-def upsert_sig_canonical(conn: sqlite3.Connection, sig: str, path: str) -> Optional[str]:
+def is_under_any_root(path: str, roots: List[str]) -> bool:
+    p = os.path.abspath(path)
+    for r in roots:
+        rr = os.path.abspath(r)
+        if p == rr or p.startswith(rr.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+def upsert_sig_canonical(conn: sqlite3.Connection, sig: str, path: str, roots: List[str]) -> Tuple[Optional[str], Optional[str]]:
     now = int(time.time())
     cur = conn.execute("SELECT path FROM content_sig WHERE sig = ?", (sig,))
     row = cur.fetchone()
@@ -386,22 +503,24 @@ def upsert_sig_canonical(conn: sqlite3.Connection, sig: str, path: str) -> Optio
             "INSERT INTO content_sig (sig, path, seen_at) VALUES (?, ?, ?)",
             (sig, path, now),
         )
-        return None
+        return None, None
 
     canonical = row[0]
     if canonical == path:
         conn.execute("UPDATE content_sig SET seen_at = ? WHERE sig = ?", (now, sig))
-        return canonical
+        return None, None
 
-    if not os.path.exists(canonical):
+    # Canonical path can become stale (file moved/deleted) or outside this run's roots.
+    # In that case, promote current path so we still index at least one copy.
+    if (not os.path.exists(canonical)) or (roots and not is_under_any_root(canonical, roots)):
         conn.execute(
             "UPDATE content_sig SET path = ?, seen_at = ? WHERE sig = ?",
             (path, now, sig),
         )
-        return None
+        return None, canonical
 
     conn.execute("UPDATE content_sig SET seen_at = ? WHERE sig = ?", (now, sig))
-    return canonical
+    return canonical, None
 
 
 def text_hash(text: str) -> str:
@@ -511,21 +630,53 @@ def extract_chunks(path: Path, stat: os.stat_result) -> List[str]:
         except Exception:
             return [path.name]
 
-    return [path.name]
+    # Non-text/binary: index a short path context instead of only basename.
+    parts: List[str] = []
+    cur = path
+    for _ in range(6):
+        if cur.name:
+            parts.append(cur.name)
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return [" / ".join(reversed(parts))] if parts else [path.name]
 
 
 def create_payload_indexes() -> None:
     if not CREATE_PAYLOAD_INDEXES:
         return
-    for field, schema in [
-        ("path", "keyword"),
-        ("name", "keyword"),
-        ("source", "keyword"),
-        ("mtime", "integer"),
-    ]:
+    items: List[Tuple[str, str, bool]] = [
+        ("path", "keyword", False),
+        ("name", "keyword", False),
+        ("source", "keyword", False),
+        ("mtime", "integer", MTIME_IS_PRINCIPAL),
+    ]
+    for field, schema_type, principal in items:
+        schema: Any = schema_type
+        if PAYLOAD_INDEX_ON_DISK or principal:
+            schema = {"type": schema_type}
+            if PAYLOAD_INDEX_ON_DISK:
+                schema["on_disk"] = True
+            if principal:
+                schema["is_principal"] = True
+        req = {"field_name": field, "field_schema": schema}
         try:
-            qdrant_put(f"/collections/{COLLECTION}/index", {"field_name": field, "field_schema": schema})
+            qdrant_put(
+                f"/collections/{COLLECTION}/index{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
+                req,
+            )
         except Exception as e:
+            # Older Qdrant may not support schema objects; fall back to string schemas.
+            if isinstance(schema, dict):
+                try:
+                    qdrant_put(
+                        f"/collections/{COLLECTION}/index{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
+                        {"field_name": field, "field_schema": schema_type},
+                    )
+                    continue
+                except Exception as e2:
+                    log(f"payload_index_error field={field} err={e2}")
+                    continue
             log(f"payload_index_error field={field} err={e}")
 
 
@@ -538,7 +689,10 @@ def delete_points_for_path(path: str) -> None:
         }
     }
     try:
-        qdrant_post(f"/collections/{COLLECTION}/points/delete?wait=true", payload)
+        qdrant_post(
+            f"/collections/{COLLECTION}/points/delete{qdrant_params(wait=QDRANT_WAIT, ordering=QDRANT_ORDERING)}",
+            payload,
+        )
     except Exception as e:
         log(f"delete_path_error path={path} err={e}")
 
@@ -561,52 +715,107 @@ class EmbedCache:
             self.cache.popitem(last=False)
 
 
-def embed_texts(provider: str, texts: List[str], cache: EmbedCache) -> List[Optional[List[float]]]:
+def embed_texts(provider: str, texts: List[str], cache: EmbedCache) -> Tuple[List[Optional[List[float]]], List[Optional[str]]]:
     results: List[Optional[List[float]]] = [None] * len(texts)
-    missing: List[Tuple[int, str]] = []
-    for i, t in enumerate(texts):
+    errors: List[Optional[str]] = [None] * len(texts)
+
+    missing: List[Tuple[int, str, str]] = []
+    for i, raw in enumerate(texts):
+        t = clamp_embedding_text(raw)
+        h = text_hash(t)
         if DEDUP_EMBEDDINGS:
-            h = text_hash(t)
             cached = cache.get(h)
             if cached is not None:
                 results[i] = cached
                 continue
-        missing.append((i, t))
+        missing.append((i, t, h))
 
     if not missing:
-        return results
+        return results, errors
 
-    # OpenAI batch
     if provider == "openai":
-        payload = {"model": OPENAI_EMBED_MODEL, "input": [t for _, t in missing]}
+        payload = {"model": OPENAI_EMBED_MODEL, "input": [t for _, t, _ in missing]}
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-        res = http_json("POST", "https://api.openai.com/v1/embeddings", payload, headers=headers)
-        embs = [d["embedding"] for d in res.get("data", [])]
-        for (idx, text), emb in zip(missing, embs):
-            results[idx] = emb
-            if DEDUP_EMBEDDINGS:
-                cache.set(text_hash(text), emb)
-        return results
+        try:
+            res = http_json("POST", "https://api.openai.com/v1/embeddings", payload, headers=headers)
+            embs = [d["embedding"] for d in res.get("data", [])]
+            for (idx, text, h), emb in zip(missing, embs):
+                results[idx] = emb
+                if DEDUP_EMBEDDINGS:
+                    cache.set(h, emb)
+        except Exception as e:
+            for idx, _, _ in missing:
+                errors[idx] = str(e)
+        return results, errors
 
-    # Ollama: parallel per text
+    # Ollama: modern batch first, fallback to legacy (possibly parallel).
+    if OLLAMA_USE_BATCH:
+        i = 0
+        while i < len(missing):
+            batch = missing[i:i + max(1, OLLAMA_BATCH_SIZE)]
+            batch_texts = [t for _, t, _ in batch]
+            try:
+                embs = embed_texts_ollama_modern(batch_texts)
+                for (idx, _t, h), emb in zip(batch, embs):
+                    results[idx] = emb
+                    if DEDUP_EMBEDDINGS:
+                        cache.set(h, emb)
+            except Exception as e:
+                # Legacy fallback per text to salvage progress.
+                with ThreadPoolExecutor(max_workers=max(1, EMBED_CONCURRENCY)) as ex:
+                    fut_map = {ex.submit(embed_text_ollama_legacy, t): (idx, h) for idx, t, h in batch}
+                    for fut in as_completed(fut_map):
+                        idx, h = fut_map[fut]
+                        try:
+                            emb = fut.result()
+                            results[idx] = emb
+                            if DEDUP_EMBEDDINGS:
+                                cache.set(h, emb)
+                        except Exception as e2:
+                            errors[idx] = str(e2 or e)
+            i += len(batch)
+        return results, errors
+
     with ThreadPoolExecutor(max_workers=max(1, EMBED_CONCURRENCY)) as ex:
-        future_map = {ex.submit(embed_text_ollama, t): (i, t) for i, t in missing}
-        for fut in as_completed(future_map):
-            i, t = future_map[fut]
+        fut_map = {ex.submit(embed_text_ollama_legacy, t): (idx, h) for idx, t, h in missing}
+        for fut in as_completed(fut_map):
+            idx, h = fut_map[fut]
             try:
                 emb = fut.result()
-                results[i] = emb
+                results[idx] = emb
                 if DEDUP_EMBEDDINGS:
-                    cache.set(text_hash(t), emb)
+                    cache.set(h, emb)
             except Exception as e:
-                results[i] = None
-                log(f"embed_error text_hash={text_hash(t)} err={e}")
+                errors[idx] = str(e)
+    return results, errors
 
-    return results
+
+def run_config_hash(provider: str) -> str:
+    payload = {
+        "indexer_version": INDEXER_VERSION,
+        "provider": provider,
+        "collection": COLLECTION,
+        "qdrant_url": QDRANT_URL,
+        "openai_model": OPENAI_EMBED_MODEL if provider == "openai" else "",
+        "ollama_model": OLLAMA_MODEL if provider == "ollama" else "",
+        "ollama_embed_endpoint": OLLAMA_EMBED_ENDPOINT,
+        "ollama_legacy_endpoint": OLLAMA_EMBED_LEGACY_ENDPOINT,
+        "ollama_truncate": OLLAMA_TRUNCATE,
+        "chunk_size": CHUNK_SIZE,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "max_bytes": MAX_BYTES,
+        "max_chars": MAX_CHARS,
+        "pdf_max_pages": PDF_MAX_PAGES,
+        "sample_windows": SAMPLE_WINDOWS,
+        "max_chunks_per_file": MAX_CHUNKS_PER_FILE,
+        "xlsx_max_cells": XLSX_MAX_CELLS,
+        "embed_max_chars": EMBED_MAX_CHARS,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def main() -> int:
-    roots = default_roots()
+    roots = DEFAULT_ROOTS
     if len(sys.argv) > 1:
         roots = sys.argv[1:]
 
@@ -616,29 +825,30 @@ def main() -> int:
 
     # state db for incremental indexing
     conn = ensure_state_db()
-    config_hash = hashlib.sha256(
-        f"{provider}|{OPENAI_EMBED_MODEL}|{CHUNK_SIZE}|{CHUNK_OVERLAP}|{MAX_CHARS}|{MAX_BYTES}".encode()
-    ).hexdigest()
-    prev_hash = get_meta(conn, "config_hash")
-    if prev_hash != config_hash:
-        log("Config changed; incremental cache invalidated for this run.")
-        set_meta(conn, "config_hash", config_hash)
+    cfg_hash = run_config_hash(provider)
+    prev_cfg = get_meta(conn, "run_cfg_hash")
+    if prev_cfg != cfg_hash:
+        log("Run config changed; files will be reprocessed as needed.")
+        set_meta(conn, "run_cfg_hash", cfg_hash)
         conn.commit()
 
     global VECTOR_SIZE
     if VECTOR_SIZE == 0:
         sample = "Dropbox semantic index bootstrap"
-        if provider == "openai":
-            vec0 = embed_text_openai(sample)
-        else:
-            vec0 = embed_text_ollama(sample)
+        cache = EmbedCache(EMBED_CACHE_SIZE)
+        vecs, errs = embed_texts(provider, [sample], cache)
+        if vecs[0] is None:
+            raise RuntimeError(f"Failed to compute vector size: {errs[0]}")
+        vec0 = vecs[0]
         VECTOR_SIZE = len(vec0)
         log(f"Detected vector size: {VECTOR_SIZE} ({provider})")
 
     ensure_collection(COLLECTION)
     create_payload_indexes()
 
-    batch = []
+    effective_batch_size = max(1, max(BATCH_SIZE, MAX_CHUNKS_PER_FILE))
+    batch: List[Dict[str, Any]] = []
+    pending_states: List[Tuple[str, int, int, bool, str, str]] = []
     points_indexed = 0
     files_seen = 0
     files_indexed = 0
@@ -649,11 +859,61 @@ def main() -> int:
     t0 = time.time()
 
     total_files = count_files(roots)
-    log(f"Starting index. provider={provider} total_files={total_files} collection={COLLECTION}")
+    run_id = uuid.uuid4().hex
+    log(f"Starting index. run_id={run_id} provider={provider} total_files={total_files} collection={COLLECTION}")
     audit = open(AUDIT_PATH, "a", encoding="utf-8")
 
     batch_id = 0
     cache = EmbedCache(EMBED_CACHE_SIZE)
+
+    def flush_batch() -> None:
+        nonlocal batch_id, batch, pending_states
+        if not batch:
+            return
+        batch_id += 1
+        first_path = batch[0]["payload"]["path"]
+        last_path = batch[-1]["payload"]["path"]
+        try:
+            upsert_batch(batch)
+            audit.write(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "batch_id": batch_id,
+                        "status": "ok",
+                        "count": len(batch),
+                        "first_path": first_path,
+                        "last_path": last_path,
+                        "timestamp": int(time.time()),
+                    }
+                )
+                + "\n"
+            )
+            for p, size, mtime, complete, fp, last_err in pending_states:
+                set_state(conn, p, size, mtime, cfg_hash, complete, fp, last_err)
+            conn.commit()
+        except Exception as e:
+            audit.write(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "batch_id": batch_id,
+                        "status": "error",
+                        "count": len(batch),
+                        "first_path": first_path,
+                        "last_path": last_path,
+                        "error": str(e),
+                        "timestamp": int(time.time()),
+                    }
+                )
+                + "\n"
+            )
+            audit.flush()
+            raise
+        audit.flush()
+        batch.clear()
+        pending_states.clear()
+
     for path in iter_files(roots):
         if MAX_FILES and files_indexed >= MAX_FILES:
             break
@@ -664,9 +924,9 @@ def main() -> int:
             skipped += 1
             continue
 
-        # incremental skip by mtime+size
+        # incremental skip by mtime+size+config hash and only if the last attempt was complete
         state = get_state(conn, str(path))
-        if state and state[0] == stat.st_size and state[1] == int(stat.st_mtime):
+        if state and state[0] == stat.st_size and state[1] == int(stat.st_mtime) and state[2] == cfg_hash and int(state[3]) == 1:
             skipped += 1
             skipped_incremental += 1
             continue
@@ -677,20 +937,24 @@ def main() -> int:
         if DEDUP_FILES:
             sig = compute_file_sig(path, stat.st_size)
             if sig:
-                canonical = upsert_sig_canonical(conn, sig, str(path))
+                canonical, stale_canonical = upsert_sig_canonical(conn, sig, str(path), roots)
+                if stale_canonical:
+                    delete_points_for_path(stale_canonical)
                 if canonical and canonical != str(path):
                     # ensure duplicates do not linger from previous runs
                     delete_points_for_path(str(path))
                     skipped += 1
                     skipped_dedup += 1
                     try:
-                        set_state(conn, str(path), stat.st_size, int(stat.st_mtime), sig)
+                        set_state(conn, str(path), stat.st_size, int(stat.st_mtime), cfg_hash, True, sig, "")
+                        conn.commit()
                     except Exception:
                         pass
                     try:
                         audit.write(
                             json.dumps(
                                 {
+                                    "run_id": run_id,
                                     "batch_id": batch_id,
                                     "status": "dedup_skip",
                                     "path": str(path),
@@ -712,12 +976,17 @@ def main() -> int:
             continue
         chunks = chunks[: max(1, MAX_CHUNKS_PER_FILE)]
 
-        vectors = embed_texts(provider, chunks, cache)
+        vectors, vec_errs = embed_texts(provider, chunks, cache)
         file_had_points = False
+        file_complete = True
+        last_err = ""
+        file_points: List[Dict[str, Any]] = []
         for idx, (chunk, vec) in enumerate(zip(chunks, vectors)):
             if vec is None:
                 embed_errors += 1
                 skipped += 1
+                file_complete = False
+                last_err = vec_errs[idx] or last_err or "embedding_failed"
                 continue
             pid = str(uuid.UUID(hex=hashlib.md5(f"{path}::{idx}".encode("utf-8")).hexdigest()))
             payload = {
@@ -730,78 +999,42 @@ def main() -> int:
                 "chunk_total": len(chunks),
                 "text_hash": text_hash(chunk),
             }
-            batch.append({"id": pid, "vector": vec, "payload": payload})
+            file_points.append({"id": pid, "vector": vec, "payload": payload})
             points_indexed += 1
             file_had_points = True
 
         if file_had_points:
             files_indexed += 1
-
-        if len(batch) >= BATCH_SIZE:
-            batch_id += 1
-            first_path = batch[0]["payload"]["path"]
-            last_path = batch[-1]["payload"]["path"]
+        else:
+            # Do not mark as complete; this file should be retried later.
             try:
-                upsert_batch(batch)
-                audit.write(json.dumps({
-                    "batch_id": batch_id,
-                    "status": "ok",
-                    "count": len(batch),
-                    "first_path": first_path,
-                    "last_path": last_path,
-                    "timestamp": int(time.time()),
-                }) + "\n")
-            except Exception as e:
-                audit.write(json.dumps({
-                    "batch_id": batch_id,
-                    "status": "error",
-                    "count": len(batch),
-                    "first_path": first_path,
-                    "last_path": last_path,
-                    "error": str(e),
-                    "timestamp": int(time.time()),
-                }) + "\n")
-                audit.flush()
-                raise
-            audit.flush()
-            batch.clear()
+                set_state(conn, str(path), stat.st_size, int(stat.st_mtime), cfg_hash, False, chunks_fingerprint(chunks), last_err or "no_vectors")
+                if files_seen % 200 == 0:
+                    conn.commit()
+            except Exception:
+                pass
+            continue
 
-        # update state (file-level)
-        try:
-            set_state(conn, str(path), stat.st_size, int(stat.st_mtime), chunks_fingerprint(chunks))
-            if files_seen % 200 == 0:
-                conn.commit()
-        except Exception:
-            pass
+        # Keep file points together (no partial splits across upserts) so state only advances on successful write.
+        if batch and (len(batch) + len(file_points) > effective_batch_size):
+            flush_batch()
 
-    if batch:
-        batch_id += 1
-        first_path = batch[0]["payload"]["path"]
-        last_path = batch[-1]["payload"]["path"]
-        try:
-            upsert_batch(batch)
-            audit.write(json.dumps({
-                "batch_id": batch_id,
-                "status": "ok",
-                "count": len(batch),
-                "first_path": first_path,
-                "last_path": last_path,
-                "timestamp": int(time.time()),
-            }) + "\n")
-        except Exception as e:
-            audit.write(json.dumps({
-                "batch_id": batch_id,
-                "status": "error",
-                "count": len(batch),
-                "first_path": first_path,
-                "last_path": last_path,
-                "error": str(e),
-                "timestamp": int(time.time()),
-            }) + "\n")
-            audit.flush()
-            raise
-        audit.flush()
-        batch.clear()
+        batch.extend(file_points)
+        pending_states.append(
+            (
+                str(path),
+                int(stat.st_size),
+                int(stat.st_mtime),
+                file_complete,
+                chunks_fingerprint(chunks),
+                last_err,
+            )
+        )
+
+        if len(batch) >= effective_batch_size:
+            flush_batch()
+
+    flush_batch()
 
     dt = time.time() - t0
     audit.close()
