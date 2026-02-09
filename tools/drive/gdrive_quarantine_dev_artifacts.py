@@ -64,11 +64,21 @@ def _find_my_drive(drive_root: Path) -> Path:
     raise FileNotFoundError(f"My Drive folder not found under {drive_root}")
 
 
-_RX_DUP_SUFFIX = re.compile(r"\s*\(\d+\)\s*$")
+_RX_DUP_END = re.compile(r"\s*\(\d+\)\s*$")
+_RX_DUP_BEFORE_EXT = re.compile(r"^(.*)\s\(\d+\)(\.[^.]+)$")
 
 
 def _strip_dup_suffix(name: str) -> str:
-    return _RX_DUP_SUFFIX.sub("", name).strip()
+    """Strip Finder duplicate suffixes.
+
+    Finder duplicates typically appear as:
+    - "Foo (1)"
+    - "foo (183).camelcase"  (i.e., suffix before an extension-like segment)
+    """
+    m = _RX_DUP_BEFORE_EXT.match(name)
+    if m:
+        return (m.group(1) + m.group(2)).strip()
+    return _RX_DUP_END.sub("", name).strip()
 
 
 @dataclass(frozen=True)
@@ -82,12 +92,48 @@ def _classify_entry(p: Path) -> Optional[Candidate]:
     name = p.name
     base = _strip_dup_suffix(name)
 
+    # "gcloud components install ..." directories are classic accidental artifacts.
+    if p.is_dir() and base.casefold().startswith("gcloud components install "):
+        return Candidate(p, "gcloud/commands", "Looks like accidental gcloud command output folder")
+
+    # NPM "bin" symlinks can land in root if someone copied node_modules/.bin wrongly.
+    if p.is_symlink():
+        try:
+            target = p.readlink().as_posix()
+        except Exception:
+            target = ""
+        target_cf = target.casefold()
+        base_cf = base.casefold()
+        if (
+            base_cf == base  # lowercase
+            and re.match(r"^[a-z0-9][a-z0-9._-]{0,200}$", base_cf)
+            and ("/@".casefold() in target_cf or "node_modules" in target_cf or "/.bin/" in target_cf or target_cf.startswith("../@"))
+        ):
+            return Candidate(p, "node_pkgs/bin_symlinks", "Looks like npm .bin symlink")
+
     # NPM scoped packages (e.g., @grpc, @google-cloud).
     if re.match(r"^@[A-Za-z0-9._-]+$", base):
         return Candidate(p, "node_pkgs/scoped", "Looks like npm scoped package")
 
     # Common unscoped npm packages seen in the incident.
-    if base.lower() in {"rimraf", "glob", "node-which"}:
+    if (p.is_dir() or p.is_symlink()) and base.lower() in {
+        "rimraf",
+        "glob",
+        "node-which",
+        "proto-loader-gen-types",
+        "lodash.camelcase",
+    }:
+        return Candidate(p, "node_pkgs/unscoped", "Looks like npm package")
+
+    # Generic npm-ish packages (lowercase, no spaces, with punctuation like '-' or '.' or '_').
+    # We intentionally avoid moving plain-word folders without punctuation to reduce false positives.
+    base_cf = base.casefold()
+    if (
+        p.is_dir()
+        and base_cf == base
+        and re.match(r"^[a-z0-9][a-z0-9._-]{0,200}$", base_cf)
+        and any(ch in base_cf for ch in ".-_")
+    ):
         return Candidate(p, "node_pkgs/unscoped", "Looks like npm package")
 
     # Git objects layout: directories named by 2-hex prefixes.
@@ -164,6 +210,8 @@ def main() -> int:
     for sub in [
         "node_pkgs/scoped",
         "node_pkgs/unscoped",
+        "node_pkgs/bin_symlinks",
+        "gcloud/commands",
         "git_objects/dirs_2hex",
         "git_objects/hex_items",
         "_logs",
