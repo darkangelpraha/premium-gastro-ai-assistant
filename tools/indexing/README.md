@@ -133,5 +133,11 @@ python3 tools/indexing/eval_index.py --queries queries.sample.jsonl --k 10
 - Don't put API keys in git.
 - Don't run OCR at unlimited scale; keep it in small batches and let it catch up gradually.
 
-Last updated: 2026-02-07
+## Dev Repo Audit + Finder Tags (macOS)
 
+In addition to indexing, this repo contains a safe inventory + Finder tagging workflow to keep `~/Projects` human-readable:
+- Inventory script: `tools/indexing/dev_repo_inventory.py`
+- Tag applier: `tools/indexing/finder_tags_apply.py` (Finder metadata only, no moves/deletes)
+- Methodology: `ops/DEV_REPO_AUDIT_AND_TAGS_2026-02-09.md`
+
+Last updated: 2026-02-09
