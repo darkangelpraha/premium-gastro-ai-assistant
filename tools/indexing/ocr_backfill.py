@@ -25,6 +25,7 @@ OCR_MAX_PAGES = int(os.environ.get("OCR_MAX_PAGES", "20"))
 OCR_RENDER_DPI = int(os.environ.get("OCR_RENDER_DPI", "200"))
 OCR_LOG_PATH = os.environ.get("OCR_LOG_PATH", "/tmp/qdrant_ocr_backfill.log")
 OCR_FORCE = os.environ.get("OCR_FORCE", "0") == "1"
+OCR_EXTS = [e.strip().lower() for e in os.environ.get("OCR_EXTS", ".pdf").split(",") if e.strip()]
 
 
 def log(msg: str) -> None:
@@ -212,15 +213,21 @@ def db_connect() -> sqlite3.Connection:
 
 
 def fetch_jobs(conn: sqlite3.Connection, limit: int) -> List[Tuple[str, str, int, int, str, int]]:
+    exts = OCR_EXTS or [".pdf"]
+    ph = ",".join(["?"] * len(exts))
     if OCR_FORCE:
         cur = conn.execute(
-            "SELECT path, ext, COALESCE(size, 0), COALESCE(mtime, 0), COALESCE(status, ''), COALESCE(attempts, 0) FROM ocr_queue ORDER BY updated_at ASC LIMIT ?",
-            (int(limit),),
+            "SELECT path, ext, COALESCE(size, 0), COALESCE(mtime, 0), COALESCE(status, ''), COALESCE(attempts, 0) "
+            f"FROM ocr_queue WHERE lower(COALESCE(ext, '')) IN ({ph}) "
+            "ORDER BY CASE WHEN lower(COALESCE(ext, '')) = '.pdf' THEN 0 ELSE 1 END, updated_at ASC LIMIT ?",
+            tuple(exts) + (int(limit),),
         )
     else:
         cur = conn.execute(
-            "SELECT path, ext, COALESCE(size, 0), COALESCE(mtime, 0), COALESCE(status, ''), COALESCE(attempts, 0) FROM ocr_queue WHERE COALESCE(status, '') != 'done' ORDER BY updated_at ASC LIMIT ?",
-            (int(limit),),
+            "SELECT path, ext, COALESCE(size, 0), COALESCE(mtime, 0), COALESCE(status, ''), COALESCE(attempts, 0) "
+            f"FROM ocr_queue WHERE COALESCE(status, '') != 'done' AND lower(COALESCE(ext, '')) IN ({ph}) "
+            "ORDER BY CASE WHEN lower(COALESCE(ext, '')) = '.pdf' THEN 0 ELSE 1 END, updated_at ASC LIMIT ?",
+            tuple(exts) + (int(limit),),
         )
     return [(r[0], r[1] or "", int(r[2]), int(r[3]), r[4] or "", int(r[5])) for r in cur.fetchall()]
 
@@ -237,7 +244,7 @@ def main() -> int:
     ensure_sidecar_dir()
     conn = db_connect()
     jobs = fetch_jobs(conn, OCR_MAX_FILES if OCR_MAX_FILES > 0 else 10)
-    log(f"ocr_backfill_start jobs={len(jobs)} langs={OCR_LANGS} sidecar_dir={OCR_SIDECAR_DIR}")
+    log(f"ocr_backfill_start jobs={len(jobs)} langs={OCR_LANGS} exts={','.join(OCR_EXTS or ['.pdf'])} sidecar_dir={OCR_SIDECAR_DIR}")
 
     done = 0
     for p, ext, _size, _mtime, status, attempts in jobs:
@@ -288,4 +295,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

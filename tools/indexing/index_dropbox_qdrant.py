@@ -66,10 +66,12 @@ OCR_SIDECAR_DIR = os.environ.get(
     str(Path.cwd() / ".cache" / "ocr_sidecars"),
 )
 OCR_PDF_MIN_TEXT_CHARS = int(os.environ.get("QDRANT_OCR_PDF_MIN_TEXT_CHARS", "200"))
+OCR_IMAGES_ENABLED = os.environ.get("QDRANT_OCR_IMAGES", "0") == "1"
 
 QDRANT_OP_RETRIES = int(os.environ.get("QDRANT_OP_RETRIES", "10"))
 QDRANT_OP_RETRY_SLEEP_SECONDS = float(os.environ.get("QDRANT_OP_RETRY_SLEEP_SECONDS", "2"))
 QDRANT_OP_MAX_SLEEP_SECONDS = float(os.environ.get("QDRANT_OP_MAX_SLEEP_SECONDS", "60"))
+QDRANT_STARTUP_WAIT_SECONDS = int(os.environ.get("QDRANT_STARTUP_WAIT_SECONDS", "30"))
 EXCLUDE_DIR_NAMES = {
     s.strip()
     for s in os.environ.get("QDRANT_EXCLUDE_DIRS", ".dropbox.cache,.git,.hg,.svn,node_modules,.venv").split(",")
@@ -125,71 +127,54 @@ def log(msg: str) -> None:
 
 
 def http_json(method: str, url: str, payload: Any = None, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    cmd = [
-        "curl",
-        "-sS",
-        "--connect-timeout",
-        str(HTTP_CONNECT_TIMEOUT),
-        "--max-time",
-        str(HTTP_MAX_TIME),
-        "-X",
-        method,
-        url,
-        "-H",
-        "Content-Type: application/json",
-        "-w",
-        "\n__HTTP_STATUS__%{http_code}",
-    ]
+    """
+    Lightweight HTTP JSON helper with retries.
+
+    We intentionally avoid shelling out to curl:
+    - improves performance (no subprocess per request)
+    - avoids curl-specific error strings and timeouts
+    - makes retry/timeout behavior consistent across hosts
+    """
+    import socket
+    from urllib import error, request
+
+    req_headers = {"Content-Type": "application/json"}
     if headers:
-        for k, v in headers.items():
-            cmd += ["-H", f"{k}: {v}"]
-    data = None
+        req_headers.update(headers)
+
+    data_bytes: Optional[bytes] = None
     if payload is not None:
-        data = json.dumps(payload)
-        cmd += ["--data-binary", "@-"]
+        data_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
     last_err = ""
     for attempt in range(HTTP_RETRIES + 1):
-        res = subprocess.run(cmd, input=data, capture_output=True, text=True)
-        if res.returncode == 0:
-            stdout = res.stdout
-            body, status = stdout, 200
-            if "__HTTP_STATUS__" in stdout:
-                body, status_str = stdout.rsplit("__HTTP_STATUS__", 1)
-                try:
-                    status = int(status_str.strip())
-                except Exception:
-                    status = 200
-            body = body.strip()
-            obj: Dict[str, Any]
-            if body:
-                try:
-                    obj = json.loads(body)
-                except Exception:
-                    obj = {"_raw": body[:2000]}
-            else:
-                obj = {}
-            if status >= 400:
-                msg = obj.get("error") or obj.get("message") or obj.get("_raw") or body[:200]
-                raise RuntimeError(f"HTTP {status} {method} {url}: {msg}")
-            return obj
-
-        last_err = (res.stderr.strip() or res.stdout.strip() or "curl failed").strip()
-        retryable = any(
-            s in last_err.lower()
-            for s in (
-                "failed to connect",
-                "couldn't connect",
-                "connection refused",
-                "timed out",
-                "empty reply",
-                "connection reset",
-            )
-        )
-        if attempt < HTTP_RETRIES and retryable:
-            time.sleep(HTTP_RETRY_SLEEP_SECONDS * (attempt + 1))
-            continue
-        break
-    raise RuntimeError(last_err)
+        try:
+            req = request.Request(url, data=data_bytes, headers=req_headers, method=method)
+            with request.urlopen(req, timeout=float(HTTP_MAX_TIME)) as resp:
+                raw = resp.read()
+                body = raw.decode("utf-8", "replace").strip()
+                if body:
+                    try:
+                        return json.loads(body)
+                    except Exception:
+                        return {"_raw": body[:2000]}
+                return {}
+        except error.HTTPError as e:
+            raw = e.read(2000)
+            body = raw.decode("utf-8", "replace").strip()
+            msg = body[:200] if body else str(e)
+            raise RuntimeError(f"HTTP {e.code} {method} {url}: {msg}")
+        except (error.URLError, socket.timeout, TimeoutError, ConnectionResetError, ConnectionAbortedError) as e:
+            last_err = str(e) or repr(e)
+            retryable = True
+            if attempt < HTTP_RETRIES and retryable:
+                time.sleep(HTTP_RETRY_SLEEP_SECONDS * (attempt + 1))
+                continue
+            break
+        except Exception as e:
+            last_err = str(e) or repr(e)
+            break
+    raise RuntimeError(last_err or "http_json failed")
 
 
 def qdrant_check(res: Dict[str, Any]) -> Dict[str, Any]:
@@ -258,6 +243,16 @@ def ensure_collection(name: str) -> None:
         }
     }
     qdrant_put(f"/collections/{name}", payload)
+
+
+def wait_for_qdrant() -> None:
+    while True:
+        try:
+            qdrant_get("/collections")
+            return
+        except Exception as e:
+            log(f"qdrant_unreachable url={QDRANT_URL} err={e}")
+            time.sleep(max(1, int(QDRANT_STARTUP_WAIT_SECONDS)))
 
 
 def embed_text_openai(text: str) -> List[float]:
@@ -1284,6 +1279,7 @@ def main() -> int:
         VECTOR_SIZE = len(vec0)
         log(f"Detected vector size: {VECTOR_SIZE} ({provider})")
 
+    wait_for_qdrant()
     ensure_collection(COLLECTION)
     create_payload_indexes()
 
@@ -1444,7 +1440,9 @@ def main() -> int:
             skipped += 1
             continue
         chunks = chunks[: max(1, MAX_CHUNKS_PER_FILE)]
-        if source in ("pdf_no_text", "image_no_text") and aux_mtime == 0 and aux_size == 0:
+        if source == "pdf_no_text" and aux_mtime == 0 and aux_size == 0:
+            enqueue_ocr(conn, path, stat, f"low_text source={source}")
+        if OCR_IMAGES_ENABLED and source == "image_no_text" and aux_mtime == 0 and aux_size == 0:
             enqueue_ocr(conn, path, stat, f"low_text source={source}")
 
         vectors, vec_errs = embed_texts(provider, chunks, cache)
