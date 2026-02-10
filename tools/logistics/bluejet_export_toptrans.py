@@ -131,13 +131,57 @@ def _pick_shipping_address_id(offer: dict[str, Any]) -> str:
             return str(v).strip()
     raise BlueJetError("Offer does not contain a usable shipping address id (expected GUID in prijemcezboziadsupl)")
 
+def _pick_company_customer_id(offer: dict[str, Any]) -> str | None:
+    v = offer.get("customerid")
+    if _is_guid(v):
+        return str(v).strip()
+    return None
+
+
+def _fetch_company_by_customer_id(bj: BlueJetClient, customer_id: str) -> dict[str, Any]:
+    resp = bj.data(no=225, limit=1, offset=0, condition=f"customerid|=|{customer_id}")
+    rows = resp.get("rows")
+    if not isinstance(rows, list) or not rows:
+        return {}
+    return bj.row_to_dict(rows[0])
+
+
+def _split_name(full: str | None) -> tuple[str | None, str | None]:
+    s = str(full or "").strip()
+    if not s:
+        return None, None
+    parts = [p for p in s.split() if p]
+    if not parts:
+        return None, None
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], " ".join(parts[1:])
+
+
+def _clean_id(v: Any) -> str | None:
+    s = str(v or "").strip()
+    if not s:
+        return None
+    return "".join(s.split())
+
+
+def _first_nonempty(*vals: Any) -> str | None:
+    for v in vals:
+        s = str(v or "").strip()
+        if s:
+            return s
+    return None
+
 
 def build_toptrans_shipments(
     *,
     offer_code: str,
     address: dict[str, Any],
+    company: dict[str, Any],
     kg: float,
     pack_quantity: int,
+    discharge_aviso: bool,
+    note_discharge: str | None,
 ) -> dict[str, Any]:
     name = str(address.get("recipient") or "").strip()
     city = str(address.get("town") or "").strip()
@@ -153,6 +197,11 @@ def build_toptrans_shipments(
     if pack_quantity <= 0:
         raise BlueJetError("pack_quantity must be > 0")
 
+    contact_full = _first_nonempty(company.get("contactperson1"), company.get("name"))
+    first_name, last_name = _split_name(contact_full)
+    phone = _first_nonempty(company.get("mobilephone"), company.get("telephone1"), company.get("telephonevirtual"))
+    email = _first_nonempty(company.get("emailaddvirtual"), company.get("emailaddress1"), company.get("emailaddress2"))
+
     return {
         "shipments": [
             {
@@ -164,9 +213,17 @@ def build_toptrans_shipments(
                         "street": street,
                         "zip": zip_code,
                     },
+                    "phone": phone,
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "registration_code": _clean_id(company.get("ico")),
+                    "vat_code": _clean_id(company.get("dic")),
                 },
                 "kg": kg,
                 "pack_quantity": pack_quantity,
+                "discharge_aviso": bool(discharge_aviso),
+                "note_discharge": note_discharge,
                 "label": offer_code,
             }
         ]
@@ -184,6 +241,17 @@ def run(argv: list[str]) -> int:
         type=int,
         default=int(os.getenv("TOPTRANS_PACK_QUANTITY", "1")),
         help="Number of packages (labels) for this shipment",
+    )
+    ap.add_argument(
+        "--avizo",
+        action="store_true",
+        default=str(os.getenv("TOPTRANS_DISCHARGE_AVISO", "0")).strip().lower() in {"1", "true", "yes", "y", "on"},
+        help="Enable discharge aviso (SMS/email notification), if supported by your TopTrans account",
+    )
+    ap.add_argument(
+        "--note-discharge",
+        default=os.getenv("TOPTRANS_NOTE_DISCHARGE"),
+        help="Optional note for the driver/recipient (TopTrans note_discharge)",
     )
     args = ap.parse_args(argv)
 
@@ -215,11 +283,19 @@ def run(argv: list[str]) -> int:
         raise BlueJetError(f"Address not found: {addr_id}")
     address = bj.row_to_dict(addr_rows[0])
 
+    company: dict[str, Any] = {}
+    customer_id = _pick_company_customer_id(offer)
+    if customer_id:
+        company = _fetch_company_by_customer_id(bj, customer_id)
+
     out = build_toptrans_shipments(
         offer_code=offer_code,
         address=address,
+        company=company,
         kg=float(args.kg),
         pack_quantity=int(args.pack_quantity),
+        discharge_aviso=bool(args.avizo),
+        note_discharge=(str(args.note_discharge).strip() if args.note_discharge else None),
     )
 
     out_path = Path(args.out)
@@ -239,4 +315,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
