@@ -32,7 +32,7 @@ TASK:
 SCOPE:
 DONE:
 NONNEGOTIABLES: zero data loss, zadne mazani uzivatelskych souboru, zadne secrets v chatu koda a gitu, zadne experimenty, kazdy krok overen, kazda odchylka od zadani predem schvalena, prubezna digital hygiene
-ANCHORS: Notion Tech Stack DB: <PLACEHOLDER>, NAS smb://192.168.1.129 (vseved), Qdrant NAS http://192.168.1.129:6333, OCR sidecary .cache/ocr_sidecars, state DB .cache/qdrant_dropbox_state.sqlite, snippets DB .cache/qdrant_dropbox_snippets.sqlite, logy /private/tmp/qdrant_dropbox_index_v3.log a /private/tmp/qdrant_ocr_backfill.log, LaunchAgents com.premiumgastro.qdrant.dropbox.index a com.premiumgastro.qdrant.dropbox.ocr, Docker Mac je Docker na Macu, Docker NAS je Docker na Synology NAS, sluzby vzdy s kontextem Mac nebo NAS
+ANCHORS: Notion Tech Stack DB: <PLACEHOLDER>, NAS smb://192.168.1.129 (vseved), Qdrant NAS http://192.168.1.129:6333, OCR sidecary .cache/ocr_sidecars, state DB .cache/qdrant_dropbox_state.sqlite, snippets DB .cache/qdrant_dropbox_snippets.sqlite, logy /private/tmp/qdrant_dropbox_index_v3.log a /private/tmp/qdrant_ocr_backfill.log, LaunchAgents com.premiumgastro.qdrant.dropbox.index a com.premiumgastro.qdrant.dropbox.ocr, com.premiumgastro.dev.audit.weekly, com.premiumgastro.gdrive.quarantine.weekly, Quarantine audit tools/drive/quarantine_audit.py a vystup ops/_local/quarantine_audit/*.tsv, Docker Mac je Docker na Macu, Docker NAS je Docker na Synology NAS, sluzby vzdy s kontextem Mac nebo NAS
 EVIDENCE:
 </SESSION_HEADER>
 
