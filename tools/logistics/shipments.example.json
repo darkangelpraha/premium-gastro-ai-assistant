@@ -1,0 +1,22 @@
+{
+  "shipments": [
+    {
+      "external_id": "BJ-EXAMPLE-0001",
+      "term_id": 1,
+      "kg": 12.5,
+      "pack_quantity": 1,
+      "discharge_aviso": false,
+      "note_discharge": "",
+      "discharge": {
+        "name": "Example Company s.r.o.",
+        "phone": "+420000000000",
+        "email": "logistics@example.com",
+        "address": {
+          "city": "Praha",
+          "street": "Example Street 1",
+          "zip": "11000"
+        }
+      }
+    }
+  ]
+}
