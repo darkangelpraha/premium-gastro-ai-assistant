@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.premiumgastro.qdrant.dropbox.delta</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/premiumgastro/Projects/00-Premium-Gastro/Notion Mail</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/nice</string>
+    <string>-n</string>
+    <string>10</string>
+    <string>/usr/local/bin/python3</string>
+    <string>scripts/index_dropbox_incremental.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+
+    <key>OPENMEMORY_AUTH_HEADER</key>
+    <string></string>
+
+    <key>QDRANT_URL</key>
+    <string>http://192.168.1.129:6333</string>
+    <key>QDRANT_COLLECTION</key>
+    <string>dropbox_backup_2026_02_07_semantic_v2</string>
+
+    <key>QDRANT_LOG_PATH</key>
+    <string>/tmp/qdrant_dropbox_index_v3.log</string>
+    <key>QDRANT_AUDIT_PATH</key>
+    <string>/tmp/qdrant_dropbox_audit_v3.jsonl</string>
+    <key>QDRANT_STATE_DB</key>
+    <string>/Users/premiumgastro/Projects/00-Premium-Gastro/Notion Mail/.cache/qdrant_dropbox_state.sqlite</string>
+
+    <key>QDRANT_BATCH_SIZE</key>
+    <string>32</string>
+    <key>QDRANT_MAX_BYTES</key>
+    <string>2097152</string>
+    <key>QDRANT_MAX_CHARS</key>
+    <string>12000</string>
+    <key>QDRANT_CHUNK_SIZE</key>
+    <string>2000</string>
+    <key>QDRANT_CHUNK_OVERLAP</key>
+    <string>200</string>
+    <key>QDRANT_PDF_MAX_PAGES</key>
+    <string>30</string>
+
+    <key>QDRANT_EMBEDDING_PROVIDER</key>
+    <string>ollama</string>
+    <key>OLLAMA_MODEL</key>
+    <string>nomic-embed-text</string>
+    <key>OLLAMA_USE_BATCH</key>
+    <string>1</string>
+    <key>OLLAMA_BATCH_SIZE</key>
+    <string>32</string>
+
+    <key>QDRANT_EMBED_CONCURRENCY</key>
+    <string>2</string>
+    <key>QDRANT_EMBED_CACHE_SIZE</key>
+    <string>5000</string>
+    <key>QDRANT_DEDUP_EMBEDDINGS</key>
+    <string>1</string>
+
+    <key>QDRANT_DEDUP_FILES</key>
+    <string>1</string>
+    <key>QDRANT_DEDUP_HASH_BYTES</key>
+    <string>262144</string>
+    <key>QDRANT_DEDUP_HASH_SUFFIX_BYTES</key>
+    <string>262144</string>
+
+    <key>QDRANT_SAMPLE_WINDOWS</key>
+    <string>5</string>
+    <key>QDRANT_MAX_CHUNKS_PER_FILE</key>
+    <string>32</string>
+    <key>QDRANT_XLSX_MAX_CELLS</key>
+    <string>20000</string>
+
+    <key>QDRANT_CREATE_PAYLOAD_INDEXES</key>
+    <string>1</string>
+    <key>QDRANT_WAIT</key>
+    <string>1</string>
+    <key>QDRANT_ORDERING</key>
+    <string>weak</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>17</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/qdrant_dropbox_delta.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/qdrant_dropbox_delta.stdout.log</string>
+</dict>
+</plist>
+
