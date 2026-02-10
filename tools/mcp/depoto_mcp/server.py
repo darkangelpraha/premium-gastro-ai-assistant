@@ -23,15 +23,8 @@ logger = logging.getLogger("depoto_mcp")
 BASE_URL = os.getenv("DEPOTO_BASE_URL", "https://server1.depoto.cz").rstrip("/")
 USERNAME = os.getenv("DEPOTO_USERNAME")
 PASSWORD = os.getenv("DEPOTO_PASSWORD")
-
-CLIENT_ID = os.getenv(
-    "DEPOTO_CLIENT_ID",
-    "23_47gmzz2fhsw08gs0o480gks0o8c484kgw4sw0k00s0scsgs0cg",
-)
-CLIENT_SECRET = os.getenv(
-    "DEPOTO_CLIENT_SECRET",
-    "3jwvev86i30g4w0kckc4ss4gokc48sko4s884wsk0g44wcsg0w",
-)
+CLIENT_ID = os.getenv("DEPOTO_CLIENT_ID")
+CLIENT_SECRET = os.getenv("DEPOTO_CLIENT_SECRET")
 
 AUTH_TIMEOUT_SECONDS = float(os.getenv("DEPOTO_AUTH_TIMEOUT_SECONDS", "10"))
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("DEPOTO_REQUEST_TIMEOUT_SECONDS", "30"))
@@ -80,6 +73,8 @@ TOKEN_CACHE = OAuthTokenCache()
 def _require_creds() -> None:
     if not USERNAME or not PASSWORD:
         raise RuntimeError("Missing DEPOTO_USERNAME or DEPOTO_PASSWORD.")
+    if not CLIENT_ID or not CLIENT_SECRET:
+        raise RuntimeError("Missing DEPOTO_CLIENT_ID or DEPOTO_CLIENT_SECRET.")
 
 
 async def _oauth_password_grant() -> tuple[str, int]:
@@ -95,11 +90,7 @@ async def _oauth_password_grant() -> tuple[str, int]:
     }
 
     async with httpx.AsyncClient(timeout=AUTH_TIMEOUT_SECONDS, follow_redirects=True) as client:
-        resp = await client.post(
-            url,
-            data=data,
-            headers={"Accept": "application/json"},
-        )
+        resp = await client.post(url, data=data, headers={"Accept": "application/json"})
         resp.raise_for_status()
         payload = resp.json()
 

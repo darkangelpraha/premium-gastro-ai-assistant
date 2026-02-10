@@ -43,3 +43,10 @@ Jakmile tyto body potvrdíme, navrhneme konkrétní datový model a harmonogram 
 Děkuji,
 Petr Svejkovský
 Premium Gastro
+
+---
+
+Kontakty z predchozi komunikace (z Missive cache, pouze pro smerovani, bez citaci obsahu):
+- tomas.libich@depoto.cz
+- vlaciha@olicon.cz
+- vavra@v2logistics.cz
