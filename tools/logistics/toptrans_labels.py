@@ -95,7 +95,7 @@ class TopTransClient:
             raise TopTransError(f"TopTrans status={status}: {json.dumps(data, ensure_ascii=False)[:2000]}")
 
         if data.get("errors"):
-            raise TopTransError(f"TopTrans errors: {json.dumps(data.get(errors), ensure_ascii=False)[:2000]}")
+            raise TopTransError(f"TopTrans errors: {json.dumps(data.get('errors'), ensure_ascii=False)[:2000]}")
 
         return data
 
@@ -344,6 +344,34 @@ def run(argv: list[str]) -> int:
 
     args = ap.parse_args(argv)
 
+    audit_path = Path(args.audit)
+    already_sent = _load_sent_external_ids(audit_path)
+
+    pack_id_arg = int(args.pack_id)
+    auto_pack = pack_id_arg <= 0
+
+    shipments = _shipments_from_json(
+        Path(args.input),
+        default_pack_id=(1 if auto_pack else pack_id_arg),
+        default_term_id=int(args.term_id),
+    )
+
+    to_process: list[tuple[Shipment, int]] = []
+    for sh, term_id in shipments:
+        if sh.external_id in already_sent:
+            continue
+        to_process.append((sh, term_id))
+
+    if not to_process:
+        print("NOTHING_TO_DO")
+        return 0
+
+    if args.dry_run:
+        print(f"DRY_RUN count={len(to_process)}")
+        for sh, term_id in to_process:
+            print(f"- {sh.external_id} term_id={term_id} kg={sh.kg} pack_id={sh.pack_id} qty={sh.pack_quantity} city={sh.discharge.address.city}")
+        return 0
+
     base_url = os.getenv("TOPTRANS_BASE_URL", "https://zp.toptrans.cz")
     username = os.getenv("TOPTRANS_USERNAME")
     password = os.getenv("TOPTRANS_PASSWORD")
@@ -361,31 +389,19 @@ def run(argv: list[str]) -> int:
     pack_map = client.register_pack()
     preferred = [p.strip() for p in str(args.prefer_pack or "").split(",")]
 
-    default_pack_id = int(args.pack_id)
-    if default_pack_id <= 0:
+    if auto_pack:
         picked = _select_pack_id(pack_map, preferred)
         default_pack_id = picked if picked is not None else 1
-
-    shipments = _shipments_from_json(Path(args.input), default_pack_id=default_pack_id, default_term_id=int(args.term_id))
-
-    audit_path = Path(args.audit)
-    already_sent = _load_sent_external_ids(audit_path)
-
-    to_process: list[tuple[Shipment, int]] = []
-    for sh, term_id in shipments:
-        if sh.external_id in already_sent:
-            continue
-        to_process.append((sh, term_id))
-
-    if not to_process:
-        print("NOTHING_TO_DO")
-        return 0
-
-    if args.dry_run:
-        print(f"DRY_RUN count={len(to_process)}")
-        for sh, term_id in to_process:
-            print(f"- {sh.external_id} term_id={term_id} kg={sh.kg} pack_id={sh.pack_id} qty={sh.pack_quantity} city={sh.discharge.address.city}")
-        return 0
+        shipments = _shipments_from_json(
+            Path(args.input),
+            default_pack_id=default_pack_id,
+            default_term_id=int(args.term_id),
+        )
+        # Rebuild the processing list now that pack_id is known.
+        to_process = [(sh, term_id) for (sh, term_id) in shipments if sh.external_id not in already_sent]
+        if not to_process:
+            print("NOTHING_TO_DO")
+            return 0
 
     saved_ids: list[int] = []
     ext_by_id: dict[int, str] = {}
