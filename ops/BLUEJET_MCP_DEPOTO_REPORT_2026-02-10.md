@@ -3,40 +3,40 @@
 ## 1) What Was Found Locally
 
 - `~/Projects/02-MCP-Servers/bluejet_mcp`
-  - This is a real MCP server implemented with **FastMCP**.
-  - It already contained a `Dockerfile`, `requirements.txt`, and `server.py`.
-- No existing Docker container for BlueJet MCP was running prior to this work (only unrelated MCP containers were present).
+  - Real MCP server implemented with FastMCP.
+  - Contains `Dockerfile`, `requirements.txt`, and `server.py`.
+- No existing Docker container for BlueJet MCP was running prior to this work.
 
 ## 2) What Was Fixed/Improved (Core Reliability)
 
-The original `server.py` had issues that could break real usage:
+The original BlueJet MCP `server.py` had issues that could break real usage:
 
-- `POST/PUT` requests were broken due to a variable bug (payload variable mismatch).
-- It printed to stdout, which can break MCP stdio transport (protocol expects stdout clean).
+- POST/PUT requests were broken due to a payload variable bug.
+- It printed to stdout, which can break MCP stdio transport.
 - Token refresh required manual retry.
 - No concurrency guard for token refresh.
 
 Fixes applied:
 
-- `POST/PUT` payload is now correct.
-- Logging goes to `stderr`.
-- Token refresh on `401` is automatic and retries once.
-- Auth token is cached with a TTL (default 23h; BlueJet token validity is documented as 24h).
-- Safe-by-default: write methods (`POST/PUT/DELETE`) are blocked unless `BLUEJET_READ_ONLY=0`.
+- POST/PUT payload is now correct.
+- Logging goes to stderr.
+- Token refresh on 401 is automatic and retries once.
+- Auth token is cached with a TTL (default 23h).
+- Safe-by-default: write methods (POST/PUT/DELETE) are blocked unless `BLUEJET_READ_ONLY=0`.
 
 ## 3) Stable Docker Deployment (Mac / Docker Desktop)
 
-### Compose file created
+### Compose file
 
 - `/Users/premiumgastro/Projects/03-Business-Tools/Docker_Configs/docker-compose-bluejet-mcp.yml`
 
-### Secrets handling (no repo leakage)
+### Secrets handling
 
-Secrets are stored in a local env file (permissions `600`):
+Secrets are stored in a local env file (permissions 600):
 
 - `/Users/premiumgastro/Projects/03-Business-Tools/Docker_Configs/env/bluejet-mcp.env`
 
-It is generated from 1Password item:
+Generated from 1Password item:
 
 - `BlueJet API FULL` (fields `BLUEJET_API_TOKEN_ID`, `BLUEJET_API_TOKEN_HASH`)
 
@@ -57,47 +57,62 @@ Server:
 - `bluejet-mcp`
 - `http://127.0.0.1:8741/mcp/`
 
-## 5) Depoto - What We Know (So Far)
+## 5) Depoto - Verified Integration Facts
 
-Local docs exist:
+Grounded sources:
 
-- `/Users/premiumgastro/Projects/00-Premium-Gastro/DEPOTO_LOGISTICS_INTEGRATION.md`
+- Depoto PHP client: `TomAtomCZ/depotoPhpClient`
+- Depoto PHP client wiki pages: "Napojeni / Import objednavek", "Udalosti", "Dopravci", "Objednavky"
 
-Key facts:
+Verified facts:
 
-- Depoto clearly offers integrations and references an "open API", but public API docs are not reliably discoverable.
-- Best practical path is to obtain Depoto API docs directly from Depoto support/sales (or use Shoptet Premium ready-made integration if available).
+- Depoto exposes a GraphQL API.
+- Auth is OAuth2. Token endpoint is `POST /oauth/v2/token`.
+- GraphQL endpoint is `POST /graphql` with `Authorization: Bearer <token>`.
+- Depoto supports per-checkout webhook delivery via `updateCheckout(id, eventUrl)`.
+- Depoto expects webhooks to be acknowledged quickly and processed asynchronously.
+- `paymentItems.isPaid` defaults to true if omitted and can prematurely push orders into picking.
+- Depoto uses stable carrier IDs (e.g. `ppl`, `zasilkovna`).
+
+Spec saved in this repo:
+
+- `ops/DEPOTO_LOGISTICS_INTEGRATION.md`
 
 ## 6) BlueJet - What We Know (API Surface)
 
 Public documentation for BlueJet REST exists and matches the current auth approach:
 
-- Token auth: `tokenID` + `tokenHash` → returns `X-Token` valid for ~24h.
+- Token auth: `tokenID` + `tokenHash` returns `X-Token` valid for ~24h.
 
-This supports the “send delivery notes to Depoto / get receipts back” integration concept:
+This supports a BJ to Depoto and Depoto to BJ sync service.
 
-- BlueJet has evidence entities referencing delivery-note-related records and purchase/receipt-related fields.
+## 7) Recommended Next Steps
 
-## 7) Recommended Next Steps (Depoto Integration)
+1) Decide authority boundaries (transition phase)
+- Depoto as availability authority is the lowest-friction model for fulfillment.
 
-1. Obtain Depoto’s official integration method:
-   - API docs (preferred)
-   - Alternative import/export formats (CSV/XML/EDI) if API is not available
-2. Define the two concrete flows:
-   - BlueJet → Depoto: “dodaci list” (outbound / fulfillment order payload)
-   - Depoto → BlueJet: “prijemka” (goods receipt / warehouse receipt payload)
-3. Only after official docs exist:
-   - Implement a small “Depoto Sync” service (Docker) that:
-     - reads BlueJet records
-     - pushes to Depoto
-     - receives Depoto webhooks
-     - writes tracking/receipts back to BlueJet
+2) Obtain Depoto credentials and IDs
+- Base URL
+- Username/password
+- Checkout ID
+- Payment method IDs
+- Depots assigned to checkout
+
+3) Implement a small `depoto-sync` service (Docker)
+- Endpoint for Depoto webhooks that enqueues events and returns 200 quickly
+- Worker that processes events with retries and audit log
+- BJ writes via BlueJet MCP or direct REST
+
+4) Add BJ trigger
+- Add a BJ UI button that calls the `depoto-sync` endpoint for a selected order
+- Add automated trigger when prerequisites are satisfied
 
 ## 8) Where This Was Saved For Long-Term Reference
 
-The improved BlueJet MCP code and documentation were copied into the GH “assistant” repo under:
+In this repo:
 
-- `tools/mcp/bluejet_mcp/`
+- BlueJet MCP: `tools/mcp/bluejet_mcp/`
+- Depoto MCP: `tools/mcp/depoto_mcp/`
+- Depoto spec: `ops/DEPOTO_LOGISTICS_INTEGRATION.md`
 
-No secrets were committed.
-
+No secrets are committed.
