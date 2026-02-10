@@ -23,6 +23,14 @@ OCR_LANGS = os.environ.get("OCR_LANGS", "eng")
 OCR_MAX_FILES = int(os.environ.get("OCR_MAX_FILES", "10"))  # per run
 OCR_MAX_PAGES = int(os.environ.get("OCR_MAX_PAGES", "20"))
 OCR_RENDER_DPI = int(os.environ.get("OCR_RENDER_DPI", "200"))
+OCR_FALLBACK_DPI = [
+    int(x)
+    for x in os.environ.get("OCR_FALLBACK_DPI", "120,90").split(",")
+    if x.strip().isdigit()
+]
+OCR_MAX_ATTEMPTS = int(os.environ.get("OCR_MAX_ATTEMPTS", "6"))
+OCR_PDFTOPPM_TIMEOUT = int(os.environ.get("OCR_PDFTOPPM_TIMEOUT", "180"))
+OCR_TESSERACT_TIMEOUT = int(os.environ.get("OCR_TESSERACT_TIMEOUT", "120"))
 OCR_LOG_PATH = os.environ.get("OCR_LOG_PATH", "/tmp/qdrant_ocr_backfill.log")
 OCR_FORCE = os.environ.get("OCR_FORCE", "0") == "1"
 OCR_EXTS = [e.strip().lower() for e in os.environ.get("OCR_EXTS", ".pdf").split(",") if e.strip()]
@@ -120,7 +128,7 @@ def tesseract_image(image_path: Path) -> str:
         ["tesseract", str(image_path), "stdout", "-l", OCR_LANGS],
         check=False,
         capture_output=True,
-        timeout=120,
+        timeout=OCR_TESSERACT_TIMEOUT,
     )
     out = (res.stdout or b"").decode("utf-8", errors="ignore")
     return out
@@ -138,29 +146,47 @@ def ocr_pdf(path: Path) -> str:
     if not ranges:
         ranges = [(1, 1)]
 
+    dpis = [int(OCR_RENDER_DPI)] + [d for d in OCR_FALLBACK_DPI if int(d) != int(OCR_RENDER_DPI) and d > 0]
+
     with tempfile.TemporaryDirectory(prefix="qdrant-ocr-") as td:
         tmpdir = Path(td)
         texts: List[str] = []
         for start, end in ranges:
-            prefix = tmpdir / f"p{start:04d}"
-            subprocess.run(
-                [
-                    "pdftoppm",
-                    "-r",
-                    str(OCR_RENDER_DPI),
-                    "-f",
-                    str(start),
-                    "-l",
-                    str(end),
-                    "-png",
-                    str(path),
-                    str(prefix),
-                ],
-                check=False,
-                capture_output=True,
-                timeout=180,
-            )
-            pngs = sorted(tmpdir.glob(f"{prefix.name}-*.png"))
+            last_err: Optional[str] = None
+            pngs: List[Path] = []
+            for dpi in dpis:
+                prefix = tmpdir / f"p{start:04d}_{dpi}"
+                try:
+                    res = subprocess.run(
+                        [
+                            "pdftoppm",
+                            "-r",
+                            str(int(dpi)),
+                            "-f",
+                            str(start),
+                            "-l",
+                            str(end),
+                            "-png",
+                            str(path),
+                            str(prefix),
+                        ],
+                        check=False,
+                        capture_output=True,
+                        timeout=OCR_PDFTOPPM_TIMEOUT,
+                    )
+                except subprocess.TimeoutExpired:
+                    last_err = f"pdftoppm_timeout dpi={dpi} pages={start}-{end} timeout={OCR_PDFTOPPM_TIMEOUT}s"
+                    continue
+
+                pngs = sorted(tmpdir.glob(f"{prefix.name}-*.png"))
+                if pngs:
+                    last_err = None
+                    break
+                last_err = f"pdftoppm_no_output dpi={dpi} pages={start}-{end} rc={getattr(res,'returncode',None)}"
+
+            if last_err:
+                raise RuntimeError(last_err)
+
             for png in pngs:
                 t = tesseract_image(png)
                 if t and t.strip():
@@ -225,7 +251,7 @@ def fetch_jobs(conn: sqlite3.Connection, limit: int) -> List[Tuple[str, str, int
     else:
         cur = conn.execute(
             "SELECT path, ext, COALESCE(size, 0), COALESCE(mtime, 0), COALESCE(status, ''), COALESCE(attempts, 0) "
-            f"FROM ocr_queue WHERE COALESCE(status, '') != 'done' AND lower(COALESCE(ext, '')) IN ({ph}) "
+            f"FROM ocr_queue WHERE COALESCE(status, '') IN ('pending', 'error') AND lower(COALESCE(ext, '')) IN ({ph}) "
             "ORDER BY CASE WHEN lower(COALESCE(ext, '')) = '.pdf' THEN 0 ELSE 1 END, updated_at ASC LIMIT ?",
             tuple(exts) + (int(limit),),
         )
@@ -250,6 +276,11 @@ def main() -> int:
     for p, ext, _size, _mtime, status, attempts in jobs:
         path = Path(p)
         try:
+            if not OCR_FORCE and OCR_MAX_ATTEMPTS > 0 and attempts >= OCR_MAX_ATTEMPTS:
+                update_job(conn, p, "failed", attempts, "max_attempts_reached")
+                conn.commit()
+                log(f"ocr_failed path={p} attempts={attempts} reason=max_attempts_reached")
+                continue
             if not path.exists():
                 update_job(conn, p, "missing", attempts, "file_missing")
                 conn.commit()
