@@ -63,12 +63,22 @@ Instead:
 ```bash
 export QDRANT_URL="http://127.0.0.1:6333"
 export QDRANT_COLLECTION="dropbox_semantic_v4"
-export QDRANT_EMBEDDING_PROVIDER="ollama"   # or openai
+export QDRANT_EMBEDDING_PROVIDER="ollama"
 export OLLAMA_MODEL="nomic-embed-text"
 
 python3 tools/indexing/index_dropbox_qdrant.py \
   "$HOME/Library/CloudStorage/Dropbox" \
   "$HOME/Library/CloudStorage/Dropbox (Backup)"
+```
+
+### Status + ETA (From The SQLite State DB)
+Script: `tools/indexing/status_dropbox_index.py`
+
+Examples:
+```bash
+python3 tools/indexing/status_dropbox_index.py
+python3 tools/indexing/status_dropbox_index.py --db "$HOME/Projects/00-Premium-Gastro/Notion Mail/.cache/qdrant_dropbox_state.sqlite"
+python3 tools/indexing/status_dropbox_index.py --windows 200,800
 ```
 
 ### Search Tool (Shows Previews)
@@ -133,11 +143,4 @@ python3 tools/indexing/eval_index.py --queries queries.sample.jsonl --k 10
 - Don't put API keys in git.
 - Don't run OCR at unlimited scale; keep it in small batches and let it catch up gradually.
 
-## Dev Repo Audit + Finder Tags (macOS)
-
-In addition to indexing, this repo contains a safe inventory + Finder tagging workflow to keep `~/Projects` human-readable:
-- Inventory script: `tools/indexing/dev_repo_inventory.py`
-- Tag applier: `tools/indexing/finder_tags_apply.py` (Finder metadata only, no moves/deletes)
-- Methodology: `ops/DEV_REPO_AUDIT_AND_TAGS_2026-02-09.md`
-
-Last updated: 2026-02-09
+Last updated: 2026-02-10
