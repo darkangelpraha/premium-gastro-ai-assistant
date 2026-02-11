@@ -28,18 +28,28 @@ Partner schema (discharge):
 Run:
 
 - Script: `python3 tools/logistics/toptrans_labels.py --input <file.json>`
-  - Tip: add `--dry-run` to validate without sending anything to TopTrans.
+  - Default is **safe**: `--mode draft` creates *unsent* orders and prints labels.
+  - Use `--mode send` only when ready to actually send orders to Toptrans (TOPIS).
+  - Tip: add `--dry-run` to validate inputs without calling TopTrans at all.
+  - Useful options:
+    - `--position 0..13` (start label position on A4)
+    - `--limit 5` (process only first N shipments from input)
+    - `--skip-price` (skip cost calculation, not recommended)
 
 Environment:
 
 - `TOPTRANS_USERNAME`
 - `TOPTRANS_PASSWORD`
 - Optional: `TOPTRANS_BASE_URL` (default `https://zp.toptrans.cz`)
+- Recommended (needed for `order/price` unless `--skip-price`):
+  - `TOPTRANS_LOADING_CITY`
+  - `TOPTRANS_LOADING_ZIP`
 
 Safety:
 
-- Idempotent by `external_id` via `ops/_local/toptrans/toptrans_audit.jsonl`.
-- No secrets are written to disk.
+- Idempotent by `external_id` via `ops/_local/toptrans/toptrans_audit.jsonl` (avoids duplicates).
+- Secrets are **not committed**. Store them locally (example): `ops/_local/toptrans/toptrans.env` with chmod 600.
+- `--mode draft` stays inside ZP (unsent orders).
 
 ## BlueJet: Export Offer Recipient To TopTrans JSON
 
