@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime as _dt
 import json
 import os
 import re
@@ -67,19 +68,22 @@ class TopTransClient:
         self._auth = (username, password)
         self._timeout_seconds = timeout_seconds
 
-    def call(self, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _post(self, path: str, payload: dict[str, Any] | None, *, accept: str) -> requests.Response:
         clean = path.strip().lstrip("/")
         if not clean:
             raise ValueError("path is required")
 
         url = f"{self._base_url}/api/{self._fmt}/{clean}/"
-        resp = requests.post(
+        return requests.post(
             url,
             json=payload or {},
             auth=self._auth,
             timeout=self._timeout_seconds,
-            headers={"Accept": "application/json"},
+            headers={"Accept": accept},
         )
+
+    def call(self, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        resp = self._post(path, payload, accept="application/json")
 
         # TopTrans returns JSON even on errors; keep body for debugging.
         try:
@@ -98,6 +102,38 @@ class TopTransClient:
             raise TopTransError(f"TopTrans errors: {json.dumps(data.get('errors'), ensure_ascii=False)[:2000]}")
 
         return data
+
+    def call_pdf(self, path: str, payload: dict[str, Any] | None = None) -> bytes:
+        """Call an endpoint that returns a PDF file body (not JSON).
+
+        Some TopTrans API methods return raw PDF bytes (e.g. `order/print-unsent-labels`).
+        In error cases the API often still returns JSON, so we attempt to parse and raise.
+        """
+
+        resp = self._post(path, payload, accept="application/pdf")
+
+        if resp.status_code >= 400:
+            try:
+                data = resp.json()
+                raise TopTransError(
+                    f"TopTrans HTTP {resp.status_code}: {json.dumps(data, ensure_ascii=False)[:2000]}"
+                )
+            except TopTransError:
+                raise
+            except Exception:
+                raise TopTransError(f"TopTrans HTTP {resp.status_code}: {resp.text[:2000]}")
+
+        ct = (resp.headers.get("content-type") or "").lower()
+        if "application/pdf" in ct or resp.content.startswith(b"%PDF"):
+            return resp.content
+
+        # Unexpected: try JSON and raise a better error.
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise TopTransError(f"Unexpected non-PDF response from TopTrans: {e}") from e
+        status = str(data.get("status") or "").lower()
+        raise TopTransError(f"TopTrans status={status}: {json.dumps(data, ensure_ascii=False)[:2000]}")
 
     def register_pack(self) -> dict[int, str]:
         data = self.call("register/pack")
@@ -268,6 +304,32 @@ def _write_audit(audit_path: Path, event: dict[str, Any]) -> None:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
+def _load_completed_external_ids(audit_path: Path) -> set[str]:
+    """Return external_ids that were successfully processed (draft labels or sent)."""
+
+    if not audit_path.exists():
+        return set()
+    done: set[str] = set()
+    for line in audit_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if obj.get("event") not in {"sent", "printed_unsent"}:
+            continue
+        ext = obj.get("external_id")
+        if isinstance(ext, str) and ext:
+            done.add(ext)
+    return done
+
+
+def _now_slug() -> str:
+    return _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
 def _select_pack_id(pack_map: dict[int, str], preferred_names: list[str]) -> int | None:
     norm_pref = [p.strip().lower() for p in preferred_names if p.strip()]
     for pid, name in pack_map.items():
@@ -337,6 +399,29 @@ def run(argv: list[str]) -> int:
         help="Comma-separated pack names to prefer when auto-detecting",
     )
     ap.add_argument(
+        "--mode",
+        choices=("draft", "send"),
+        default=(os.getenv("TOPTRANS_MODE", "draft").strip().lower() or "draft"),
+        help="draft: create unsent orders + print labels; send: send orders + get labels",
+    )
+    ap.add_argument(
+        "--position",
+        type=int,
+        default=int(os.getenv("TOPTRANS_POSITION", "0")),
+        help="Label start position on A4 sheet (0..13)",
+    )
+    ap.add_argument(
+        "--skip-price",
+        action="store_true",
+        help="Skip `order/price` (not recommended if you need cost analytics).",
+    )
+    ap.add_argument(
+        "--limit",
+        type=int,
+        default=int(os.getenv("TOPTRANS_LIMIT", "0")),
+        help="Process only first N shipments from input (0 = all).",
+    )
+    ap.add_argument(
         "--dry-run",
         action="store_true",
         help="Validate and print planned API calls without creating orders",
@@ -345,7 +430,7 @@ def run(argv: list[str]) -> int:
     args = ap.parse_args(argv)
 
     audit_path = Path(args.audit)
-    already_sent = _load_sent_external_ids(audit_path)
+    already_done = _load_completed_external_ids(audit_path)
 
     pack_id_arg = int(args.pack_id)
     auto_pack = pack_id_arg <= 0
@@ -358,9 +443,12 @@ def run(argv: list[str]) -> int:
 
     to_process: list[tuple[Shipment, int]] = []
     for sh, term_id in shipments:
-        if sh.external_id in already_sent:
+        if sh.external_id in already_done:
             continue
         to_process.append((sh, term_id))
+
+    if args.limit and args.limit > 0:
+        to_process = to_process[: int(args.limit)]
 
     if not to_process:
         print("NOTHING_TO_DO")
@@ -398,15 +486,52 @@ def run(argv: list[str]) -> int:
             default_term_id=int(args.term_id),
         )
         # Rebuild the processing list now that pack_id is known.
-        to_process = [(sh, term_id) for (sh, term_id) in shipments if sh.external_id not in already_sent]
+        to_process = [(sh, term_id) for (sh, term_id) in shipments if sh.external_id not in already_done]
+        if args.limit and args.limit > 0:
+            to_process = to_process[: int(args.limit)]
         if not to_process:
             print("NOTHING_TO_DO")
             return 0
 
+    position = int(args.position)
+    if position < 0 or position > 13:
+        raise TopTransError("--position must be in range 0..13")
+
+    loading_city = os.getenv("TOPTRANS_LOADING_CITY")
+    loading_zip = os.getenv("TOPTRANS_LOADING_ZIP")
+
     saved_ids: list[int] = []
     ext_by_id: dict[int, str] = {}
+    price_by_ext: dict[str, Any] = {}
 
     for sh, term_id in to_process:
+        if not args.skip_price:
+            if not loading_city or not loading_zip:
+                raise TopTransError("Missing TOPTRANS_LOADING_CITY/TOPTRANS_LOADING_ZIP (required for order/price)")
+            if not sh.discharge.address.zip:
+                raise TopTransError(f"Missing discharge.address.zip for external_id={sh.external_id}")
+
+            price_payload: dict[str, Any] = {
+                "term_id": term_id,
+                "loading_address_city": loading_city,
+                "loading_address_zip": loading_zip,
+                "discharge_address_city": sh.discharge.address.city,
+                "discharge_address_zip": sh.discharge.address.zip,
+                "kg": sh.kg,
+                "discharge_aviso": 1 if sh.discharge_aviso else 0,
+            }
+            price_resp = client.call("order/price", price_payload)
+            price_data = price_resp.get("data") if isinstance(price_resp, dict) else None
+            price_by_ext[sh.external_id] = price_data
+            _write_audit(
+                audit_path,
+                {
+                    "event": "priced",
+                    "external_id": sh.external_id,
+                    "price": price_data,
+                },
+            )
+
         payload: dict[str, Any] = {
             "term_id": term_id,
             "loading_select": 1,
@@ -469,32 +594,75 @@ def run(argv: list[str]) -> int:
             },
         )
 
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.mode == "draft":
+        pdf_blob = client.call_pdf(
+            "order/print-unsent-labels",
+            {
+                "ids": saved_ids,
+                "position": position,
+            },
+        )
+        pdf_path = out_dir / f"labels_unsent_{_now_slug()}.pdf"
+        pdf_path.write_bytes(pdf_blob)
+
+        for order_id in saved_ids:
+            ext = ext_by_id.get(order_id)
+            _write_audit(
+                audit_path,
+                {
+                    "event": "printed_unsent",
+                    "external_id": ext,
+                    "order_id": order_id,
+                    "pdf": str(pdf_path),
+                    "price": price_by_ext.get(ext or ""),
+                },
+            )
+
+        print(f"DRAFT count={len(saved_ids)} pdf=1 out={pdf_path}")
+        return 0
+
     send_resp = client.call(
         "order/send",
         {
             "ids": saved_ids,
             "options": {
-                "position": 0,
+                "position": position,
             },
         },
     )
 
-    out_dir = Path(args.out)
-    pdfs = _decode_toptrans_files(send_resp.get("data") if isinstance(send_resp.get("data"), dict) else send_resp, out_dir)
+    data_obj = send_resp.get("data") if isinstance(send_resp, dict) else None
+    if not isinstance(data_obj, dict):
+        data_obj = {}
 
-    batch_id = None
-    data_obj = send_resp.get("data")
-    if isinstance(data_obj, dict):
-        batch_id = data_obj.get("orderListObj")
+    pdfs = _decode_toptrans_files(data_obj, out_dir)
 
-    for order_id in saved_ids:
+    batch_id = data_obj.get("orderListObj")
+
+    order_numbers = data_obj.get("order_numbers") or data_obj.get("orderNumbers") or []
+    item_numbers = data_obj.get("item_numbers") or data_obj.get("itemNumbers") or []
+    if not isinstance(order_numbers, list):
+        order_numbers = []
+    if not isinstance(item_numbers, list):
+        item_numbers = []
+
+    for i, order_id in enumerate(saved_ids):
+        ext = ext_by_id.get(order_id)
+        order_number = order_numbers[i] if i < len(order_numbers) else None
+        item_number = item_numbers[i] if i < len(item_numbers) else None
         _write_audit(
             audit_path,
             {
                 "event": "sent",
-                "external_id": ext_by_id.get(order_id),
+                "external_id": ext,
                 "order_id": order_id,
                 "batch_id": batch_id,
+                "order_number": order_number,
+                "item_number": item_number,
+                "price": price_by_ext.get(ext or ""),
                 "pdfs": [str(p) for p in pdfs],
             },
         )
