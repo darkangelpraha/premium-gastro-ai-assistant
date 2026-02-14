@@ -2,6 +2,19 @@
 
 **The most advanced digital assistant ecosystem for business automation in 2025**
 
+## 🚀 PG 2.0 AI-First Transformation (ACTIVE)
+
+**Current Initiative**: PG 2.0 AI-First Transformation (Lucy / Pan Talir / Zeus)
+- 📍 **GitHub Anchor**: [`PG_2.0_TRANSFORMATION_ANCHOR.md`](PG_2.0_TRANSFORMATION_ANCHOR.md)
+- 📈 **Execution Log**: [`PG_2.0_EXECUTION_LOG.md`](PG_2.0_EXECUTION_LOG.md)
+- 👥 **Role Boundaries**: [`PG_2.0_ROLE_BOUNDARIES.md`](PG_2.0_ROLE_BOUNDARIES.md)
+- ⏱️ **Cadence**: Daily ships + Weekly customer/reliability improvements (non-negotiable)
+- 🎯 **Timeline**: 14-day execution window (Feb 14-27, 2026)
+
+See the transformation anchor document for full details on operational principles, role boundaries, and success criteria.
+
+---
+
 ## 🎯 Overview
 
 Complete AI-powered automation system that transforms Premium Gastro into a technology-driven business with 90% automated communications and administrative tasks.
@@ -100,6 +113,9 @@ Complete AI-powered automation system that transforms Premium Gastro into a tech
 
 ```
 /
+├── PG_2.0_TRANSFORMATION_ANCHOR.md         # PG 2.0 transformation master doc
+├── PG_2.0_EXECUTION_LOG.md                 # Daily/weekly execution tracking
+├── PG_2.0_ROLE_BOUNDARIES.md               # Lucy/Pan Talir/Zeus interfaces
 ├── PREMIUM_GASTRO_ASSISTANT_MASTERPLAN.md  # Complete roadmap
 ├── EMAIL_AUTOMATION_DEPLOYED.md            # Phase 1 documentation
 ├── SUPABASE_VIP_ANALYZER.py               # VIP contact detection
