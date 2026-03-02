@@ -60,6 +60,7 @@
 ```
 
 Pro práci v kódu: transformovat pomocí `row_to_dict()`:
+
 ```python
 def row_to_dict(row):
     return {col["name"]: col["value"] for col in row["columns"]}
@@ -220,8 +221,8 @@ Cíl: Missive dropdown menu se všemi 3 agenty, n8n orchestrace.
 
 ## API dokumentace
 
-- **Oficiální API docs**: https://public.bluejet.cz/public/api/bluejet-api.html
-- **Layers no-code**: https://www.bluejet.cz/layers-api/
+- **Oficiální API docs**: <https://public.bluejet.cz/public/api/bluejet-api.html>
+- **Layers no-code**: <https://www.bluejet.cz/layers-api/>
 - **Formáty**: REST + SOAP, JSON + XML, HTTPS
 - **Batch insert**: POST s `dataObject` a `innerObjects`, reference-based binding
 
