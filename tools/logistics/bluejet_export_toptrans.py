@@ -173,6 +173,13 @@ def _first_nonempty(*vals: Any) -> str | None:
     return None
 
 
+def _normalize_postal_code(raw: Any) -> str | None:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    return re.sub(r"\s+", "", s) or None
+
+
 def build_toptrans_shipments(
     *,
     offer_code: str,
@@ -186,7 +193,7 @@ def build_toptrans_shipments(
     name = str(address.get("recipient") or "").strip()
     city = str(address.get("town") or "").strip()
     street = str(address.get("street1") or "").strip() or None
-    zip_code = str(address.get("zipcode") or "").strip() or None
+    zip_code = _normalize_postal_code(address.get("zipcode"))
 
     if not name:
         raise BlueJetError("Address is missing recipient (name)")
