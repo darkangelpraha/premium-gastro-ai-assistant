@@ -18,6 +18,8 @@ from typing import Iterable, Tuple, Dict, Any, List, Optional
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
 
+from llm_runtime_policy import enforce_qdrant_ssot, resolve_embedding_provider
+
 INDEXER_VERSION = "2026-02-07.ollama-embed-batch-state-v4-snippets-ocr-ooxml"
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
@@ -83,7 +85,10 @@ EXCLUDE_FILE_NAMES = {
     if s.strip()
 }
 
-EMBEDDING_PROVIDER = os.environ.get("QDRANT_EMBEDDING_PROVIDER", "auto").lower()
+EMBEDDING_PROVIDER = os.environ.get(
+    "QDRANT_EMBEDDING_PROVIDER",
+    os.environ.get("LLM_PROVIDER_DEFAULT", "ollama"),
+).lower()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
@@ -301,11 +306,10 @@ def embed_text_ollama_legacy(text: str) -> List[float]:
 
 
 def choose_provider() -> str:
-    if EMBEDDING_PROVIDER != "auto":
-        return EMBEDDING_PROVIDER
-    if OPENAI_API_KEY:
-        return "openai"
-    return "ollama"
+    return resolve_embedding_provider(
+        requested_provider=EMBEDDING_PROVIDER,
+        has_openai_api_key=bool(OPENAI_API_KEY),
+    )
 
 
 def read_text(path: Path, max_chars: Optional[int] = None) -> Tuple[str, int]:
@@ -1250,6 +1254,8 @@ def run_config_hash(provider: str) -> str:
 
 
 def main() -> int:
+    enforce_qdrant_ssot("index_dropbox_qdrant")
+
     roots = DEFAULT_ROOTS
     if len(sys.argv) > 1:
         roots = sys.argv[1:]

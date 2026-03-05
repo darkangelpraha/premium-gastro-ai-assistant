@@ -7,12 +7,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
+from llm_runtime_policy import enforce_qdrant_ssot, resolve_embedding_provider
+
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY") or os.environ.get("QDRANT_APIKEY")
 COLLECTION = os.environ.get("QDRANT_COLLECTION", "dropbox_semantic_index")
 
-EMBEDDING_PROVIDER = os.environ.get("QDRANT_EMBEDDING_PROVIDER", "auto").lower()
+EMBEDDING_PROVIDER = os.environ.get(
+    "QDRANT_EMBEDDING_PROVIDER",
+    os.environ.get("LLM_PROVIDER_DEFAULT", "ollama"),
+).lower()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
@@ -72,11 +77,10 @@ def qdrant_params(**kwargs: Any) -> str:
 
 
 def choose_provider() -> str:
-    if EMBEDDING_PROVIDER != "auto":
-        return EMBEDDING_PROVIDER
-    if OPENAI_API_KEY:
-        return "openai"
-    return "ollama"
+    return resolve_embedding_provider(
+        requested_provider=EMBEDDING_PROVIDER,
+        has_openai_api_key=bool(OPENAI_API_KEY),
+    )
 
 
 def embed_query_ollama(text: str) -> List[float]:
@@ -167,6 +171,8 @@ def is_match(result: Dict[str, Any], expect_any: List[str]) -> bool:
 
 
 def main() -> int:
+    enforce_qdrant_ssot("eval_index")
+
     if "--queries" not in sys.argv:
         print("Usage: eval_index.py --queries <queries.jsonl> [--k N]")
         return 2
@@ -215,4 +221,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

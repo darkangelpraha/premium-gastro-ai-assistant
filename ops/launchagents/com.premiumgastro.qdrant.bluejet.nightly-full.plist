@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.premiumgastro.qdrant.bluejet.nightly-full</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/premiumgastro/Projects/00-Premium-Gastro/premium-gastro-ai-assistant</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/nice</string>
+    <string>-n</string>
+    <string>10</string>
+    <string>/usr/local/bin/python3</string>
+    <string>tools/indexing/index_bluejet_qdrant.py</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+
+    <key>BLUEJET_BASE_URL</key>
+    <string>https://czeco.bluejet.cz</string>
+    <key>BLUEJET_API_TOKEN_ID</key>
+    <string></string>
+    <key>BLUEJET_API_TOKEN_HASH</key>
+    <string></string>
+    <key>BLUEJET_API_TOKEN_ID_OP_REF</key>
+    <string>op://AI/BlueJet API/token_id</string>
+    <key>BLUEJET_API_TOKEN_HASH_OP_REF</key>
+    <string>op://AI/BlueJet API/token_hash</string>
+
+    <key>QDRANT_URL</key>
+    <string>http://192.168.1.129:6333</string>
+    <key>QDRANT_API_KEY</key>
+    <string></string>
+    <key>QDRANT_WAIT</key>
+    <string>1</string>
+    <key>QDRANT_ORDERING</key>
+    <string>weak</string>
+
+    <key>BLUEJET_PAGE_LIMIT</key>
+    <string>50</string>
+    <key>BLUEJET_API_MIN_INTERVAL_SECONDS</key>
+    <string>1.0</string>
+    <key>BLUEJET_API_MAX_RETRIES</key>
+    <string>6</string>
+    <key>BLUEJET_API_RETRY_BASE_SECONDS</key>
+    <string>2.0</string>
+    <key>BLUEJET_API_MAX_RETRY_SLEEP_SECONDS</key>
+    <string>60</string>
+    <key>BLUEJET_MAX_PAGES_PER_EVIDENCE</key>
+    <string>0</string>
+    <key>BLUEJET_MAX_ROWS_PER_EVIDENCE</key>
+    <string>0</string>
+    <key>BLUEJET_QDRANT_BATCH_SIZE</key>
+    <string>50</string>
+    <key>BLUEJET_QDRANT_BATCH_PAUSE_SECONDS</key>
+    <string>0.4</string>
+    <key>BLUEJET_EVIDENCE_PAUSE_SECONDS</key>
+    <string>3</string>
+    <key>BLUEJET_MAX_POINTS_PER_RUN</key>
+    <string>12000</string>
+    <key>BLUEJET_MIRROR_EVIDENCES</key>
+    <string>225,222,217,293,356,323</string>
+    <key>BLUEJET_MIRROR_STATE_DB</key>
+    <string>/Users/premiumgastro/Projects/00-Premium-Gastro/premium-gastro-ai-assistant/.cache/bluejet_mirror_state.sqlite</string>
+    <key>BLUEJET_MIRROR_LOG_PATH</key>
+    <string>/tmp/bluejet_qdrant_mirror.log</string>
+    <key>BLUEJET_MIRROR_AUDIT_PATH</key>
+    <string>/tmp/bluejet_qdrant_mirror_audit.jsonl</string>
+  </dict>
+
+  <!-- každý den ve 02:20 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>20</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/bluejet_qdrant_mirror_nightly.stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/bluejet_qdrant_mirror_nightly.stdout.log</string>
+</dict>
+</plist>

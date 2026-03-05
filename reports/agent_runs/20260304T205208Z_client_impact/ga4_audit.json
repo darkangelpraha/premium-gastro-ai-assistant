@@ -1,0 +1,18 @@
+{
+  "rows": [
+    {
+      "property_id": "123456789",
+      "stream_count": 0,
+      "key_event_count": -1,
+      "event_counts": {
+        "session_start": 0,
+        "page_view": 0,
+        "purchase": 0
+      },
+      "findings": [
+        "Failed to read data streams: HTTP 403: {\"error\": {\"code\": 403, \"message\": \"Request had insufficient authentication scopes.\", \"status\": \"PERMISSION_DENIED\", \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"reason\": \"ACCESS_TOKEN_SCOPE_INSUFFICIENT\", \"domain\": \"googleapis.com\", \"metadata\": {\"method\": \"google.analytics.admin.v1beta.AnalyticsAdminService.ListDataStreams\", \"service\": \"analyticsadmin.googleapis.com\"}}]}}",
+        "Failed to run GA4 report: HTTP 403: {\"error\": {\"code\": 403, \"message\": \"Request had insufficient authentication scopes.\", \"status\": \"PERMISSION_DENIED\", \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"reason\": \"ACCESS_TOKEN_SCOPE_INSUFFICIENT\", \"domain\": \"googleapis.com\", \"metadata\": {\"service\": \"analyticsdata.googleapis.com\", \"method\": \"google.analytics.data.v1beta.BetaAnalyticsData.RunReport\"}}]}}"
+      ]
+    }
+  ]
+}

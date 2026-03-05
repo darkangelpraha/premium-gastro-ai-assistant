@@ -1,0 +1,14 @@
+{
+  "run_id": "20260304T210527Z",
+  "profile": "client_impact",
+  "results": [
+    {
+      "job_name": "bluejet_kpi_digest",
+      "status": "skipped",
+      "summary": "Missing BlueJet credentials (BLUEJET_API_TOKEN_ID/HASH).",
+      "findings": [],
+      "metrics": {},
+      "artifacts": []
+    }
+  ]
+}

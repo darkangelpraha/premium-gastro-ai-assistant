@@ -1,0 +1,13 @@
+{
+  "rows": [
+    {
+      "container": "accounts/1234567/containers/7654321",
+      "workspace_count": 0,
+      "tag_count": 0,
+      "trigger_count": 0,
+      "findings": [
+        "GTM API error: HTTP 403: {\"error\": {\"code\": 403, \"message\": \"Request had insufficient authentication scopes.\", \"errors\": [{\"message\": \"Insufficient Permission\", \"domain\": \"global\", \"reason\": \"insufficientPermissions\"}], \"status\": \"PERMISSION_DENIED\", \"details\": [{\"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\", \"reason\": \"ACCESS_TOKEN_SCOPE_INSUFFICIENT\", \"domain\": \"googleapis.com\", \"metadata\": {\"method\": \"container_tag.apiary_v2.TagManagerServiceV2.ListWorkspaces\", \"service\": \"tagmanager.googleapis.com\"}}]}}"
+      ]
+    }
+  ]
+}

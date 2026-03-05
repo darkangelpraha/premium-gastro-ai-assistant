@@ -1,0 +1,14 @@
+{
+  "run_id": "20260304T211228Z",
+  "profile": "client_impact",
+  "results": [
+    {
+      "job_name": "bluejet_kpi_digest",
+      "status": "error",
+      "summary": "Unhandled exception: '365d'",
+      "findings": [],
+      "metrics": {},
+      "artifacts": []
+    }
+  ]
+}

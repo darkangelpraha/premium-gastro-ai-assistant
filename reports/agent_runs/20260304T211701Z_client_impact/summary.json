@@ -1,0 +1,14 @@
+{
+  "run_id": "20260304T211701Z",
+  "profile": "client_impact",
+  "results": [
+    {
+      "job_name": "bluejet_kpi_digest",
+      "status": "error",
+      "summary": "Unhandled exception: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))",
+      "findings": [],
+      "metrics": {},
+      "artifacts": []
+    }
+  ]
+}

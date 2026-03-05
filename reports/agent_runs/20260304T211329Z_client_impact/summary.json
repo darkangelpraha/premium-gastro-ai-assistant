@@ -1,0 +1,23 @@
+{
+  "run_id": "20260304T211329Z",
+  "profile": "client_impact",
+  "results": [
+    {
+      "job_name": "bluejet_kpi_digest",
+      "status": "attention",
+      "summary": "BlueJet KPI digest generated (orders=0, invoices=0)",
+      "findings": [
+        "No BlueJet orders detected in last 180 days",
+        "No BlueJet invoices detected in last 180 days"
+      ],
+      "metrics": {
+        "orders_180d": 0,
+        "invoices_180d": 0
+      },
+      "artifacts": [
+        "reports/agent_runs/20260304T211329Z_client_impact/bluejet_kpi_digest.json",
+        "reports/agent_runs/20260304T211329Z_client_impact/bluejet_kpi_digest.md"
+      ]
+    }
+  ]
+}

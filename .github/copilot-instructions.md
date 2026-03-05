@@ -1,5 +1,13 @@
 # GitHub Copilot Custom Instructions - Premium Gastro AI Assistant
 
+## Critical Runtime Policy (Mandatory)
+
+- Follow `AI_POLICY.md` for all coding and chat assistance behavior.
+- Qdrant is the only knowledge SSoT for repository/business knowledge tasks.
+- Use retrieval-first flows before factual answers.
+- Default model provider is local Ollama.
+- Paid cloud providers are opt-in only and require explicit enablement (`ALLOW_PAID_LLM=1`).
+
 ## 🎯 Project Overview
 
 **Premium Gastro AI Assistant** is a comprehensive AI-powered automation ecosystem designed to transform business operations through intelligent communication processing, VIP contact management, and multi-channel automation. This is a production system handling real business data for a Central European food service company.

@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
+from llm_runtime_policy import enforce_qdrant_ssot, resolve_embedding_provider
+
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://127.0.0.1:6333")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY") or os.environ.get("QDRANT_APIKEY")
@@ -19,7 +21,10 @@ SNIPPETS_DB = os.environ.get(
     str(Path.cwd() / ".cache" / "qdrant_dropbox_snippets.sqlite"),
 )
 
-EMBEDDING_PROVIDER = os.environ.get("QDRANT_EMBEDDING_PROVIDER", "auto").lower()
+EMBEDDING_PROVIDER = os.environ.get(
+    "QDRANT_EMBEDDING_PROVIDER",
+    os.environ.get("LLM_PROVIDER_DEFAULT", "ollama"),
+).lower()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
@@ -82,11 +87,10 @@ def qdrant_params(**kwargs: Any) -> str:
 
 
 def choose_provider() -> str:
-    if EMBEDDING_PROVIDER != "auto":
-        return EMBEDDING_PROVIDER
-    if OPENAI_API_KEY:
-        return "openai"
-    return "ollama"
+    return resolve_embedding_provider(
+        requested_provider=EMBEDDING_PROVIDER,
+        has_openai_api_key=bool(OPENAI_API_KEY),
+    )
 
 
 def embed_query_ollama(text: str) -> List[float]:
@@ -266,6 +270,8 @@ def rrf_merge(a: List[Dict[str, Any]], b: List[Dict[str, Any]], k: int = 60) -> 
 
 
 def main() -> int:
+    enforce_qdrant_ssot("search_dropbox_index")
+
     if len(sys.argv) < 2:
         print("Usage: search_dropbox_index.py <query> [--limit N] [--fts] [--hybrid]")
         return 2
@@ -359,4 +365,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-03-04T21:08:27+00:00",
+  "orders": {
+    "7d": {
+      "count": 0,
+      "total_amount_czk": 0.0
+    },
+    "30d": {
+      "count": 0,
+      "total_amount_czk": 0.0
+    },
+    "top_statuses": []
+  },
+  "invoices": {
+    "7d": {
+      "count": 0,
+      "total_amount_czk": 0.0
+    },
+    "30d": {
+      "count": 0,
+      "total_amount_czk": 0.0
+    },
+    "top_statuses": []
+  },
+  "sample_size": {
+    "orders": 0,
+    "invoices": 0
+  }
+}

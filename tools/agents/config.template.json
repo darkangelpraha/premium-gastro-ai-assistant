@@ -1,0 +1,34 @@
+{
+  "profiles": {
+    "client_impact": {
+      "description": "BlueJet-first client impact profile (orders, invoices, revenue snapshot).",
+      "jobs": [
+        "bluejet_kpi_digest"
+      ]
+    },
+    "client_impact_google": {
+      "description": "GA4/GTM client-impact checks (requires OAuth scopes).",
+      "jobs": [
+        "ga4_audit",
+        "gtm_audit",
+        "kpi_daily_digest"
+      ]
+    },
+    "internal_ops": {
+      "description": "Internal process visibility jobs.",
+      "jobs": [
+        "internal_ops_snapshot"
+      ]
+    },
+    "full": {
+      "description": "Run all client impact and internal ops jobs.",
+      "jobs": [
+        "bluejet_kpi_digest",
+        "ga4_audit",
+        "gtm_audit",
+        "kpi_daily_digest",
+        "internal_ops_snapshot"
+      ]
+    }
+  }
+}

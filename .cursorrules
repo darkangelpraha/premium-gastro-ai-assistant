@@ -1,0 +1,7 @@
+## Cursor Rules - Premium Gastro AI Assistant
+
+- Follow `AI_POLICY.md` as the mandatory runtime policy.
+- Treat Qdrant as the only knowledge SSoT for repository/business knowledge questions.
+- Do retrieval-first for factual answers; do not answer from memory if Qdrant context is expected.
+- Default to local Ollama models and local tools.
+- Do not switch to paid cloud LLM providers unless explicitly requested and `ALLOW_PAID_LLM=1`.

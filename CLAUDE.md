@@ -4,8 +4,23 @@
 
 - Uživatel komunikuje **česky**, odpovídej česky
 - Uživatel je "roztržitý" — minimalizuj manuální práci, proaktivně navrhuj řešení
-- **VŽDY se ZEPTEJ před velkými autonomními akcemi** — nespouštěj rozsáhlé operace bez souhlasu
-- Stručné dotazy na souhlas: "Potřebuji udělat X. OK?"
+- **Execution-first režim**: nezahlcovat dotazy typu "chceš/jak chceš" u technických rozhodnutí.
+- Agent má samostatně zvolit bezpečnou a správnou variantu, postupovat metodou
+  `sjednotit/přesunout -> ověřit -> mazat až nakonec`.
+- **Core Rule — Canonical Merge (non negotiable)**:
+  při nálezu duplicitních nebo vysoce podobných položek se NEVOLÍ varianta "nechat vs. smazat";
+  vytvoří se nová **canonical** položka sloučením know-how ze všech relevantních zdrojů
+  (včetně historie a timestampů), a teprve po verifikaci se řeší archivace/odstranění původních záznamů.
+- Dotaz na souhlas je povolen pouze u nevratných/destruktivních kroků (delete, reset, force změny)
+  nebo při chybějících oprávněních/přístupech.
+
+## AI politika (povinné)
+
+- Qdrant je **jediný SSoT** pro znalostní úlohy (repo/business knowledge).
+- Pro faktické odpovědi vždy nejdřív retrieval (Qdrant), pak generování.
+- Výchozí provider je lokální Ollama.
+- Placené cloudy jsou opt-in pouze při explicitním souhlasu (`ALLOW_PAID_LLM=1`).
+- Zdroj pravdy pro všechny asistenty: `AI_POLICY.md`.
 
 ---
 
