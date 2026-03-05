@@ -213,7 +213,6 @@ def build_toptrans_shipments(
                         "street": street,
                         "zip": zip_code,
                     },
-                    "phone": phone,
                     "email": email,
                     "first_name": first_name,
                     "last_name": last_name,
