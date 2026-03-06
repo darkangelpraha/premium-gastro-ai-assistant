@@ -5,7 +5,7 @@ services:
       context: ./hub-ui
       dockerfile: Dockerfile
     ports: 
-      - "3000:3000"
+      - "3080:3000"
     environment:
       - NODE_ENV=production
       - API_BASE_URL=http://comm-processor:5000
@@ -16,6 +16,22 @@ services:
       - comm-processor
       - postgres
       - redis
+    restart: always
+    networks:
+      - premium-gastro-network
+
+  # Supabase OAuth Consent App
+  supabase-oauth:
+    build:
+      context: ./supabase-oauth
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - NODE_ENV=production
     restart: always
     networks:
       - premium-gastro-network

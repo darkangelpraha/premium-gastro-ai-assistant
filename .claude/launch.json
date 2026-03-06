@@ -5,7 +5,14 @@
       "name": "hub-ui",
       "runtimeExecutable": "docker",
       "runtimeArgs": ["compose", "up", "hub-ui"],
-      "port": 3000
+      "port": 3080
+    },
+    {
+      "name": "supabase-oauth",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "supabase-oauth"],
+      "port": 3000,
+      "autoPort": false
     },
     {
       "name": "n8n",

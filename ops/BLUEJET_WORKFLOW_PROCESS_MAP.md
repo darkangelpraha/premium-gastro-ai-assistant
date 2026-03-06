@@ -71,10 +71,18 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 ## Hlavní flow — od nabídky po expedici
 
 ### KROK 1: Vytvoření nabídky
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Kde**: Evidence 293 (Nabídky)
 **Stav**: `(empty)` / `Probíhající`
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Vybrat zákazníka (`customerid` → evidence 225)
 - [ ] Zadat dodací adresu (`prijemcezboziadsupl` → evidence 243)
 - [ ] Přidat položky nabídky (evidence 291)
@@ -89,10 +97,18 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 ---
 
 ### KROK 2: Odeslání nabídky klientovi
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Stav**: `(empty)` → `1. v řešení`
 **statuscode**: → `Odeslaná`
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Zkontrolovat kombinovaný náhled (preview nabídky)
 - [ ] Ověřit správnost cen, položek, adres
 - [ ] Vygenerovat PDF nabídky (šablona)
@@ -100,16 +116,28 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 - [ ] Nastavit stav na `1. v řešení`
 
 **Poznámky**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - Email jde na adresu z firmy (`emailaddress1`) nebo kontaktu
 - Příloha = PDF z BlueJet šablony
 
 ---
 
 ### KROK 3: Klient potvrdil → objednat u dodavatele
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Stav**: `1. v řešení` → `4. objednat`
 **statuscode**: → `Potvrzená`
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Klient potvrdil nabídku (email/telefon)
 - [ ] Zkontrolovat dostupnost položek
 - [ ] Nastavit stav na `4. objednat`
@@ -117,10 +145,18 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 ---
 
 ### KROK 4: Vytvoření sumární objednávky na dodavatele
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Kde**: Evidence 356 (Objednávky)
 **Stav nabídky**: `4. objednat` → `5. objednaná`
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Vytvořit sumární objednávku (356) z nabídky (293)
   - Agregace položek na dodavatele
   - Název: `Sumární objednávka {Dodavatel}`
@@ -132,6 +168,10 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 - [ ] Na objednávce: `datumpotvrzeni` = datum potvrzení dodavatelem
 
 **Vazby**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - Objednávka (356) → `customerid` = dodavatel (225)
 - Objednávka (356) → `opportunityid` = příležitost (209), pokud existuje
 - Položky objednávky (354) → `productid` = produkt (217)
@@ -139,10 +179,18 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 ---
 
 ### KROK 5: Příjemka — naskladnění
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Kde**: Evidence 437 (Sklady) + 441 (Skladové karty)
 **Stav nabídky**: `5. objednaná` → `7. naskladněná - odeslat zákazníkovi`
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Zboží fyzicky dorazilo od dodavatele
 - [ ] Zkontrolovat kompletnost dodávky vs. objednávka
 - [ ] Vytvořit příjemku v BlueJet
@@ -155,6 +203,10 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
   - `8. naskladněná - osobní odběr` (osobní odběr)
 
 **Skladové karty (441) — klíčová pole**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - `skladkartaid`: ID karty
 - `productid`: vazba na produkt (217)
 - `skladid`: vazba na sklad (437)
@@ -166,20 +218,36 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 ---
 
 ### KROK 6: Výdejka + dodací list (DL) + faktura
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Kde**: Nabídka (293), Faktura (323), Skladové karty (441)
 **Stav nabídky**: `7. naskladněná - odeslat zákazníkovi` → `9. vyřízená`
 
 **Trigger**: Změna stavu na "odeslat zákazníkovi" / manuální akce
 
 #### 6a: Výdejka (vyskladnění)
+<<<<<<< HEAD
+
 **Checklist**:
+
+=======
+**Checklist**:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Vytvořit výdejku v BlueJet
   - Snížení `mnozstvi` na skladové kartě (441) pro každý produkt
   - Kontrola, že `mnoszstvidisponibilni` >= požadované množství
 - [ ] Ověřit shodu vyskladněných položek vs. nabídka
 
 #### 6b: Dodací list (DL)
+<<<<<<< HEAD
+
 **Checklist**:
+
+=======
+**Checklist**:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Vygenerovat dodací list (PDF) z BlueJet šablony
 - [ ] DL obsahuje:
   - Příjemce (adresa z cascade: `prijemcezboziadsupl` → `mainprijemcezboziadsupl` → `prijemadd` → `prijemfakturyadd`)
@@ -188,8 +256,15 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 - [ ] Přiložit DL ke zásilce
 
 #### 6c: Faktura
+<<<<<<< HEAD
+
 **Kde**: Evidence 323 (Vydané faktury) + 324 (Položky faktur)
 **Checklist**:
+
+=======
+**Kde**: Evidence 323 (Vydané faktury) + 324 (Položky faktur)
+**Checklist**:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Vytvořit fakturu (323) z nabídky/výdejky
   - Přenést položky do evidence 324
   - `cenaprodej`, `cenadphprodej`, `mena`, `kurz`
@@ -203,12 +278,22 @@ Pole `pole150219155621supl` = custom workflow stav nabídky.
 ---
 
 ### KROK 7: Expedice přes TopTrans
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 **Kdy**: Denně v 10:00 — nabídky se stavem `7. naskladněná - odeslat zákazníkovi`
 
 **Automatizovaný flow (existující skripty)**:
 
 #### 7a: Export z BlueJet do TopTrans JSON
+<<<<<<< HEAD
+
 **Skript**: `tools/logistics/bluejet_export_toptrans.py`
+
+=======
+**Skript**: `tools/logistics/bluejet_export_toptrans.py`
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 ```bash
 python3 tools/logistics/bluejet_export_toptrans.py \
   --offer-code "692/2025" \
@@ -218,6 +303,10 @@ python3 tools/logistics/bluejet_export_toptrans.py \
 ```
 
 **Co skript dělá**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 1. Najde nabídku (293) podle `kodnabidky`
 2. Vezme shipping adresu (cascade: `prijemcezboziadsupl` → `mainprijemcezboziadsupl` → `prijemadd` → `prijemfakturyadd`)
 3. Načte detaily adresy (243): `recipient`, `town`, `street1`, `zipcode`
@@ -225,13 +314,23 @@ python3 tools/logistics/bluejet_export_toptrans.py \
 5. Vytvoří `shipments.json` s TopTrans-kompatibilním payloadem
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Ověřit, že nabídka má vyplněnou dodací adresu
 - [ ] Ověřit, že zákazník má telefon a email (pro avízo)
 - [ ] Zadat váhu (`--kg`)
 - [ ] Zadat počet balíků (`--pack-quantity`)
 
 #### 7b: Vytvoření TopTrans zásilky
+<<<<<<< HEAD
+
 **Skript**: `tools/logistics/toptrans_labels.py`
+
+=======
+**Skript**: `tools/logistics/toptrans_labels.py`
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 ```bash
 # Dry-run (kontrola bez odeslání):
 python3 tools/logistics/toptrans_labels.py \
@@ -250,6 +349,10 @@ python3 tools/logistics/toptrans_labels.py \
 ```
 
 **Co skript dělá**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 1. `order/price` — cenová kalkulace dopravy
 2. `order/save` — vytvoří draft zásilku v TopTrans
 3. `order/send` (mode=send) — odešle do TOPIS systému
@@ -257,6 +360,10 @@ python3 tools/logistics/toptrans_labels.py \
 5. Zapisuje audit log (`toptrans_audit.jsonl`) pro idempotenci
 
 **Checklist**:
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Spustit `--dry-run` jako kontrolu
 - [ ] Zkontrolovat adresy a kontakty ve výstupu
 - [ ] Spustit `--mode draft` pro štítky
@@ -266,7 +373,13 @@ python3 tools/logistics/toptrans_labels.py \
 - [ ] Ověřit tracking kódy v TopTrans ZP portálu
 
 #### 7c: Kontrola tracking kódů
+<<<<<<< HEAD
+
 **Checklist**:
+
+=======
+**Checklist**:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] Zkontrolovat `toptrans_audit.jsonl` — `event: sent`, `order_number`, `item_number`
 - [ ] Ověřit v TopTrans ZP portálu, že zásilky mají status "Odesláno"
 - [ ] Zaslat tracking kódy zákazníkům (email)
@@ -275,9 +388,17 @@ python3 tools/logistics/toptrans_labels.py \
 ---
 
 ### KROK 8: Stav "Vyřízená"
+<<<<<<< HEAD
+
 **Stav**: `9. vyřízená`
 
 **Co to znamená**:
+
+=======
+**Stav**: `9. vyřízená`
+
+**Co to znamená**:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - Zboží odesláno zákazníkovi ✅
 - Dodací list přiložen ✅
 - Faktura vystavena a odeslána ✅
@@ -288,7 +409,11 @@ python3 tools/logistics/toptrans_labels.py \
 
 ## Denní rutina (10:00 ráno)
 
+<<<<<<< HEAD
+### Ranní expedice workflow
+=======
 ### Ranní expedice workflow:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 
 ```
 10:00  Zkontrolovat nabídky se stavem "7. naskladněná - odeslat zákazníkovi"
@@ -387,6 +512,10 @@ Každá z těchto hodnot je GUID → evidence 243 (Adresy): `recipient`, `town`,
 ## Statusy napříč evidencemi
 
 ### Nabídky (293) — `statuscode`
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 | Status | Význam |
 |--------|--------|
 | Probíhající | Rozpracovaná |
@@ -397,6 +526,10 @@ Každá z těchto hodnot je GUID → evidence 243 (Adresy): `recipient`, `town`,
 | Vzor | Šablona/vzor |
 
 ### Nabídky (293) — `pole150219155621supl` (custom)
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 | Stav | Význam | Další akce |
 |------|--------|------------|
 | (empty) | Nová / rozpracovaná | Dokončit a odeslat |
@@ -410,12 +543,20 @@ Každá z těchto hodnot je GUID → evidence 243 (Adresy): `recipient`, `town`,
 | .. | Neaktivní/stornovaná | — |
 
 ### Objednávky (356) — `statuscode`
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 | Status | Význam |
 |--------|--------|
 | Odeslaná | Odeslána dodavateli |
 | Potvrzená | Dodavatel potvrdil |
 
 ### Faktury (323) — `statuscode`
+<<<<<<< HEAD
+
+=======
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 | Status | Význam |
 |--------|--------|
 | Potvrzená | Platná faktura |
@@ -426,14 +567,24 @@ Každá z těchto hodnot je GUID → evidence 243 (Adresy): `recipient`, `town`,
 
 ## ABJ automatizace — co lze automatizovat
 
+<<<<<<< HEAD
+### Již implementováno
+
+=======
 ### Již implementováno:
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - ✅ Export nabídky → TopTrans JSON (`bluejet_export_toptrans.py`)
 - ✅ Vytvoření TopTrans zásilky + štítky (`toptrans_labels.py`)
 - ✅ Idempotence přes audit log
 - ✅ Dry-run režim pro bezpečnost
 - ✅ BlueJet MCP server pro API přístup
 
+<<<<<<< HEAD
+### K implementaci (ABJ agent)
+
+=======
 ### K implementaci (ABJ agent):
+>>>>>>> fabea519b8cf0d6ba68c8ea075312c19be226a35
 - [ ] **Denní ranní batch**: v 10:00 vzít všechny nabídky se stavem `7` → provést celý export+send flow
 - [ ] **Automatická změna stavů**: po úspěšném odeslání → `9. vyřízená`
 - [ ] **Email s tracking kódy**: po `order/send` → extrahovat tracking → email zákazníkovi
